@@ -169,7 +169,7 @@ static const struct hid_device_id liquidctl_table[] = {
 MODULE_DEVICE_TABLE(hid, liquidctl_table);
 
 static int liquidctl_probe(struct hid_device *hdev,
-		const struct hid_device_id *id)
+			   const struct hid_device_id *id)
 {
 	struct liquidctl_device_data *ldata;
 	struct device *hwmon_dev;
@@ -180,15 +180,7 @@ static int liquidctl_probe(struct hid_device *hdev,
 		return -ENOMEM;
 
 	hid_info(hdev, "device: " DEVNAME_KRAKEN_GEN3 "\n");
-	hwmon_dev = devm_hwmon_device_register_with_info(&hdev->dev,
-			DEVNAME_KRAKEN_GEN3, ldata, &kraken_chip_info, NULL);
-	if (IS_ERR(hwmon_dev)) {
-		hid_err(hdev, "failed to register hwmon device\n");
-		return PTR_ERR(hwmon_dev);
-	}
-
 	ldata->hid_dev = hdev;
-	ldata->hwmon_dev = hwmon_dev;
 	hid_set_drvdata(hdev, ldata);
 
 	ret = hid_parse(hdev);
@@ -214,6 +206,18 @@ static int liquidctl_probe(struct hid_device *hdev,
 	/* FIXME missing *something* besides opening the hid device; currently
 	 * it's necessary to rebind the physical device to hid-core to start
 	 * receiving events */
+
+	hwmon_dev = devm_hwmon_device_register_with_info(&hdev->dev,
+							 DEVNAME_KRAKEN_GEN3,
+							 ldata,
+							 &kraken_chip_info,
+							 NULL);
+	if (IS_ERR(hwmon_dev)) {
+		hid_err(hdev, "failed to register hwmon device\n");
+		ret = PTR_ERR(hwmon_dev);
+		goto rec_close_hid;
+	}
+	ldata->hwmon_dev = hwmon_dev;
 
 	hid_info(hdev, "probing successful\n");
 	return 0;
