@@ -13,7 +13,6 @@
 #define __passed printk(KERN_DEBUG DRVNAME ": passed %s:%d\n", __FUNCTION__, __LINE__);
 
 #define DRVNAME "liquidctl"  /* FIXME for upstream (hid x usb, hwmon x other) */
-#define DEVNAME_KRAKEN_GEN3 "kraken"  /* FIXME not descriptive for user-space */
 
 struct liquidctl_device_data {
 	struct hid_device *hid_dev;
@@ -81,18 +80,24 @@ static int liquidctl_read_string(struct device *dev,
 	return 0;
 }
 
-# define KRAKEN_TEMP_COUNT 1
+static const struct hwmon_ops liquidctl_hwmon_ops = {
+	.is_visible = liquidctl_is_visible,
+	.read = liquidctl_read,
+	.read_string = liquidctl_read_string,
+};
+
+#define DEVNAME_KRAKEN_GEN3 "kraken"  /* FIXME not descriptive for user-space */
+#define KRAKEN_TEMP_COUNT		1
+#define KRAKEN_FAN_COUNT		2
 
 static const char *const kraken_temp_label[] = {
 	"Coolant",
 };
 
-static const u32 liquidctl_temp_config[] = {
+static const u32 kraken_temp_config[] = {
 	HWMON_T_INPUT | HWMON_T_LABEL,
 	0
 };
-
-# define KRAKEN_FAN_COUNT 2
 
 static const u32 kraken_fan_config[] = {
 	HWMON_F_INPUT,
@@ -105,9 +110,9 @@ static const char *const kraken_fan_label[] = {
 	"Pump",
 };
 
-static const struct hwmon_channel_info liquidctl_temp = {
+static const struct hwmon_channel_info kraken_temp = {
 	.type = hwmon_temp,
-	.config = liquidctl_temp_config,
+	.config = kraken_temp_config,
 };
 
 static const struct hwmon_channel_info kraken_fan = {
@@ -115,14 +120,8 @@ static const struct hwmon_channel_info kraken_fan = {
 	.config = kraken_fan_config,
 };
 
-static const struct hwmon_ops liquidctl_hwmon_ops = {
-	.is_visible = liquidctl_is_visible,
-	.read = liquidctl_read,
-	.read_string = liquidctl_read_string,
-};
-
 static const struct hwmon_channel_info *kraken_info[] = {
-	&liquidctl_temp,
+	&kraken_temp,
 	&kraken_fan,
 	NULL
 };
@@ -132,41 +131,72 @@ static const struct hwmon_chip_info kraken_chip_info = {
 	.info = kraken_info,
 };
 
-#define KRAKEN_STATUS_ID 4
-#define KRAKEN_STATUS_SIZE 16
+#define DEVNAME_SMART_DEVICE "smart_device"  /* FIXME not descriptive for user-space */
+#define SMART_DEVICE_TEMP_COUNT		0
+#define SMART_DEVICE_FAN_COUNT		3
+
+static const u32 smart_device_fan_config[] = {
+	HWMON_F_INPUT,
+	HWMON_F_INPUT,
+	HWMON_F_INPUT,
+	0
+};
+
+static const struct hwmon_channel_info smart_device_fan = {
+	.type = hwmon_fan,
+	.config = smart_device_fan_config,
+};
+
+static const struct hwmon_channel_info *smart_device_info[] = {
+	&smart_device_fan,
+	NULL
+};
+
+static const struct hwmon_chip_info smart_device_chip_info = {
+	.ops = &liquidctl_hwmon_ops,
+	.info = smart_device_info,
+};
+
+#define USB_VENDOR_ID_NZXT		0x1e71
+#define USB_DEVICE_ID_KRAKEN_GEN3	0x170e
+#define USB_DEVICE_ID_SMART_DEVICE	0x1714
+
+#define STATUS_REPORT_ID		4
+#define STATUS_MIN_BYTES		16
 
 static int liquidctl_raw_event(struct hid_device *hdev,
 			       struct hid_report *report, u8 *data, int size)
 {
 	struct liquidctl_device_data *ldata;
+	u8 channel;
 
-	/* printk(KERN_DEBUG DRVNAME " raw_event report: id=%u, type=%u, application=%u, maxfield=%u, size=%u", */
-	/* 		report->id, report->type, report->application, report->maxfield, report->size); */
-	/* print_hex_dump(KERN_DEBUG, DRVNAME, DUMP_PREFIX_OFFSET, 16, 4, data, */
-	/* 		size, false); */
-
-	if (report->id != KRAKEN_STATUS_ID)
+	if (report->id != STATUS_REPORT_ID || size < STATUS_MIN_BYTES)
 		return 0;
-	if (size < KRAKEN_STATUS_SIZE)
-		return -EINVAL;
 
 	ldata = hid_get_drvdata(hdev);
 
 	/* TODO do we need a lock, is long store atomic on *all* platforms? */
-	do {
-		/* TODO new devices */
+	switch (hdev->product) {
+	case USB_DEVICE_ID_KRAKEN_GEN3:
 		ldata->temp_in[0] = data[1] * 1000 + data[2] * 100;
 		ldata->fan_in[0] = be16_to_cpup((__be16 *)(data + 3));
 		ldata->fan_in[1] = be16_to_cpup((__be16 *)(data + 5));
-	} while (false);
+		break;
+	case USB_DEVICE_ID_SMART_DEVICE:
+		channel = data[15] >> 4;
+		if (channel >= ldata->fan_count)
+			return 0;
+		ldata->fan_in[channel] = be16_to_cpup((__be16 *)(data + 3));
+		break;
+	default:
+		return 0;
+	}
 	return 0;
 }
 
-#define USB_VENDOR_ID_NZXT		0x1e71
-#define USB_DEVICE_ID_KRAKEN_GEN3	0x170e
-
 static const struct hid_device_id liquidctl_table[] = {
 	{ HID_USB_DEVICE(USB_VENDOR_ID_NZXT, USB_DEVICE_ID_KRAKEN_GEN3) },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_NZXT, USB_DEVICE_ID_SMART_DEVICE) },
 	{ }
 };
 MODULE_DEVICE_TABLE(hid, liquidctl_table);
@@ -176,20 +206,35 @@ static int liquidctl_probe(struct hid_device *hdev,
 {
 	struct liquidctl_device_data *ldata;
 	struct device *hwmon_dev;
+	const struct hwmon_chip_info *chip_info;
+	char *chip_name;
 	int ret;
 
 	ldata = devm_kzalloc(&hdev->dev, sizeof(*ldata), GFP_KERNEL);
 	if (!ldata)
 		return -ENOMEM;
 
-	do {
-		/* TODO new devices */
-		hid_info(hdev, "device: " DEVNAME_KRAKEN_GEN3 "\n");
+	switch (hdev->product) {
+	case USB_DEVICE_ID_KRAKEN_GEN3:
+		chip_name = DEVNAME_KRAKEN_GEN3;
 		ldata->temp_count = KRAKEN_TEMP_COUNT;
 		ldata->fan_count = KRAKEN_FAN_COUNT;
 		ldata->temp_label = kraken_temp_label;
 		ldata->fan_label = kraken_fan_label;
-	} while (false);
+		chip_info = &kraken_chip_info;
+		break;
+	case USB_DEVICE_ID_SMART_DEVICE:
+		chip_name = DEVNAME_SMART_DEVICE;
+		ldata->temp_count = SMART_DEVICE_TEMP_COUNT;
+		ldata->fan_count = SMART_DEVICE_FAN_COUNT;
+		ldata->temp_label = NULL;
+		ldata->fan_label = NULL;
+		chip_info = &smart_device_chip_info;
+		break;
+	default:
+		return -EINVAL;
+	}
+	hid_info(hdev, "device: %s\n", chip_name);
 
 	ldata->temp_in = devm_kcalloc(&hdev->dev, ldata->temp_count,
 				      sizeof(*ldata->temp_in), GFP_KERNEL);
@@ -225,9 +270,9 @@ static int liquidctl_probe(struct hid_device *hdev,
 	}
 
 	hwmon_dev = devm_hwmon_device_register_with_info(&hdev->dev,
-							 DEVNAME_KRAKEN_GEN3,
+							 chip_name,
 							 ldata,
-							 &kraken_chip_info,
+							 chip_info,
 							 NULL);
 	if (IS_ERR(hwmon_dev)) {
 		hid_err(hdev, "failed to register hwmon device\n");
