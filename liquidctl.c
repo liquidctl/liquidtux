@@ -203,10 +203,6 @@ static int liquidctl_probe(struct hid_device *hdev,
 		goto rec_close_hid;
 	}
 
-	/* FIXME missing *something* besides opening the hid device; currently
-	 * it's necessary to rebind the physical device to hid-core to start
-	 * receiving events */
-
 	hwmon_dev = devm_hwmon_device_register_with_info(&hdev->dev,
 							 DEVNAME_KRAKEN_GEN3,
 							 ldata,
@@ -229,10 +225,17 @@ rec_stop_hid:
 	return ret;
 }
 
+static void liquidctl_remove(struct hid_device *hdev)
+{
+	hid_hw_close(hdev);
+	hid_hw_stop(hdev);
+}
+
 static struct hid_driver liquidctl_driver = {
 	.name = DRVNAME,
 	.id_table = liquidctl_table,
 	.probe = liquidctl_probe,
+	.remove = liquidctl_remove,
 	.raw_event = liquidctl_raw_event,
 };
 
