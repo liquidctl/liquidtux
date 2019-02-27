@@ -1,27 +1,27 @@
 #  Linux hwmon kernel drivers for AIOs
 
-The goal of this project to offer hwmon drivers for closed-loop liquid coolers
-and other devices supported by [liquidctl], making all sensor data available,
-consistently, in `/sys/class/hwmon/hwmon*`.
+The goal of this project is to offer hwmon drivers for closed-loop liquid
+coolers and other devices supported by [liquidctl], making all sensor data
+available in `/sys/class/hwmon/hwmon*`.
 
-By using the standard hwmon sysfs interfaces, `sensors`, other tools based on
-`libsensors`, as well as programs that directly read from the raw sysfs
-interfaces, will have access to these sensors without any specific knowledge of
-how the devices work.  For more information, check the documentation of the
-[hwmon sysfs interfaces] and the [lm-sensors] repository.
+By using the standard hwmon sysfs interface, `sensors`, tools using
+`libsensors`, as well as programs that read directly from the raw sysfs
+interface, will have access to the sensors without needing any specific
+knowledge of how the devices work.  For more information, read the
+documentation of the [hwmon sysfs interface] and check the [lm-sensors]
+repository.
 
-This repository contains the current state of the out-of-tree drivers.  They
-are being developed with the goal of eventually landing in mainline.
+This is the current state of the out-of-tree drivers.  As they mature they will
+be proposed to upstream.
 
 | Device | Summary | Parent | `temp*` | `fan*` | `pwm*` |
 | --- | --- | --- | --- | --- | --- |
 | NZXT Kraken X (X42, X52, X62 or X72) | WIP | `hid_device` | working | working | to do |
-| NZXT Smart Device | planned | `hid_device` | no temp sensor | partial | to do |
+| NZXT Smart Device | WIP | `hid_device` | – | partial | to do |
 | EVGA CLC (120 CL12, 240 or 280) | enqueued | `usb_interface` ||||
 
-A few more devices are reasonably well understood and might eventually be
-supported as well, though some help in testing and validation would be
-necessary.
+A few other devices are reasonably well understood and might also be supported,
+though some help in testing and validation is necessary.
 
 | Device | Summary | Notes |
 | --- | --- | --- |
@@ -29,14 +29,14 @@ necessary.
 | Corsair Hydro (H80i v2, H100i v2, H115i) | considering | similar to EVGA CLC |
 | Corsair Hydro (H80i GT, H100i GTX, H110i GTX) | considering | might have limitations |
 
-Unfortunately, a few devices are unlikely to be supported.
+Finally, a few devices are unlikely to be supported:
 
 | Device | Summary | Details |
 | --- | --- | --- |
-| NZXT Kraken X (X31, X41 or X61) | not planned | can't read sensor data without changing settings |
+| NZXT Kraken X (X31, X41 or X61) | has quirks | can't read sensor data without changing settings |
 | NZXT Kraken M22 | wont add | exposes no sensors |
 
 [liquidctl]: https://github.com/jonasmalacofilho/liquidctl
-[hwmon sysfs interfaces]: https://www.kernel.org/doc/Documentation/hwmon/sysfs-interface
+[hwmon sysfs interface]: https://www.kernel.org/doc/Documentation/hwmon/sysfs-interface
 [lm-sensors]: https://github.com/lm-sensors/lm-sensors
 
