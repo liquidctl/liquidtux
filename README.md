@@ -16,7 +16,7 @@ are being developed with the goal of eventually landing in mainline.
 | Device | Summary | Parent | `temp*` | `fan*` | `pwm*` |
 | --- | --- | --- | --- | --- | --- |
 | NZXT Kraken X (X42, X52, X62 or X72) | WIP | `hid_device` | working | working | to do |
-| NZXT Smart Device | planned | `hid_device` | partial | partial | to do |
+| NZXT Smart Device | planned | `hid_device` | no temp sensor | partial | to do |
 | EVGA CLC (120 CL12, 240 or 280) | enqueued | `usb_interface` ||||
 
 A few more devices are reasonably well understood and might eventually be
