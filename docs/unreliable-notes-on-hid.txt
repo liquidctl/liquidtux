@@ -1,0 +1,42 @@
+hid_parse - parse HW reports
+----------------------------
+
+static inline int __must_check hid_parse(struct hid_device *hdev)
+
+Call this from probe after you set up the device (if needed). Your
+report_fixup will be called (if non-NULL) after reading raw report from
+device before passing it to hid layer for real parsing.
+
+Just a wraper over hid_open_report.
+
+
+hid_hw_start - start underlying HW
+----------------------------------
+
+int hid_hw_start(struct hid_device *hdev, unsigned int connect_mask)
+
+Call this in probe function *after* hid_parse. This will setup HW
+buffers and start the device (if not defeirred to device open).
+hid_hw_stop must be called if this was successful.
+
+Calls ll_driver->start and, if connect_mask is not zero, ll_driver->connect.
+
+
+hid_hw_open - signal underlying HW to start delivering events
+-------------------------------------------------------------
+
+int hid_hw_open(struct hid_device *hdev)
+
+Tell underlying HW to start delivering events from the device.
+This function should be called sometime after successful call
+to hid_hw_start().
+
+Calls ll_driver->open, if ll_driver->open_count still zero.
+
+On device removal it's necessary to call hid_hw_close, otherwise subsequent
+probes will not be able to restart the events.
+
+Furthermore, hid_hw_close is not automatically called from the default remove()
+implementation.  Thus it's necessary to supply one that does that, not
+forgetting about other necessary cleanup tasks like calling hid_hw_stop.
+
