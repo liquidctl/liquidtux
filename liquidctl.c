@@ -15,13 +15,16 @@
 #define DRVNAME "liquidctl"  /* FIXME for upstream (hid x usb, hwmon x other) */
 #define DEVNAME_KRAKEN_GEN3 "kraken"  /* FIXME not descriptive for user-space */
 
-/* FIXME generalize temp and fan data */
 struct liquidctl_device_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
-	long temp1;
-	long fan1;
-	long fan2;
+
+	int temp_count;
+	int fan_count;
+	const char *const *temp_label;
+	const char *const *fan_label;
+	long *temp_in;
+	long *fan_in;
 };
 
 static umode_t liquidctl_is_visible(const void *data,
@@ -38,31 +41,14 @@ static int liquidctl_read(struct device *dev, enum hwmon_sensor_types type,
 
 	switch (type) {
 	case hwmon_temp:
-		switch (attr) {
-		case hwmon_temp_input:
-			*val = ldata->temp1;
-			break;
-		default:
+		if (attr != hwmon_temp_input || channel >= ldata->temp_count)
 			return -EINVAL;
-		}
+		*val = ldata->temp_in[channel];
 		break;
 	case hwmon_fan:
-		switch (attr) {
-		case hwmon_fan_input:
-			switch (channel) {
-			case 0:
-				*val = ldata->fan1;
-				break;
-			case 1:
-				*val = ldata->fan2;
-				break;
-			default:
-				return -EINVAL;
-			}
-			break;
-		default:
+		if (attr != hwmon_fan_input || channel >= ldata->fan_count)
 			return -EINVAL;
-		}
+		*val = ldata->fan_in[channel];
 		break;
 	default:
 		return -EINVAL;
@@ -74,24 +60,20 @@ static int liquidctl_read_string(struct device *dev,
 				 enum hwmon_sensor_types type, u32 attr,
 				 int channel, const char **str)
 {
+	struct liquidctl_device_data *ldata = dev_get_drvdata(dev);
+
 	switch (type) {
 	case hwmon_temp:
-		switch (attr) {
-		case hwmon_temp_label:
-			*str = "Coolant";
-			break;
-		default:
+		if (attr != hwmon_temp_label || channel >= ldata->temp_count ||
+				!ldata->temp_label[channel])
 			return -EINVAL;
-		}
+		*str = ldata->temp_label[channel];
 		break;
 	case hwmon_fan:
-		switch (attr) {
-		case hwmon_fan_label:
-			*str = "Pump";
-			break;
-		default:
+		if (attr != hwmon_fan_label || channel >= ldata->fan_count ||
+				!ldata->fan_label[channel])
 			return -EINVAL;
-		}
+		*str = ldata->fan_label[channel];
 		break;
 	default:
 		return -EINVAL;
@@ -99,15 +81,28 @@ static int liquidctl_read_string(struct device *dev,
 	return 0;
 }
 
+# define KRAKEN_TEMP_COUNT 1
+
+static const char *const kraken_temp_label[] = {
+	"Coolant",
+};
+
 static const u32 liquidctl_temp_config[] = {
 	HWMON_T_INPUT | HWMON_T_LABEL,
 	0
 };
 
-static const u32 liquidctl_fan_config[] = {
+# define KRAKEN_FAN_COUNT 2
+
+static const u32 kraken_fan_config[] = {
 	HWMON_F_INPUT,
 	HWMON_F_INPUT | HWMON_F_LABEL,
 	0
+};
+
+static const char *const kraken_fan_label[] = {
+	NULL,
+	"Pump",
 };
 
 static const struct hwmon_channel_info liquidctl_temp = {
@@ -115,9 +110,9 @@ static const struct hwmon_channel_info liquidctl_temp = {
 	.config = liquidctl_temp_config,
 };
 
-static const struct hwmon_channel_info liquidctl_fan = {
+static const struct hwmon_channel_info kraken_fan = {
 	.type = hwmon_fan,
-	.config = liquidctl_fan_config,
+	.config = kraken_fan_config,
 };
 
 static const struct hwmon_ops liquidctl_hwmon_ops = {
@@ -128,7 +123,7 @@ static const struct hwmon_ops liquidctl_hwmon_ops = {
 
 static const struct hwmon_channel_info *kraken_info[] = {
 	&liquidctl_temp,
-	&liquidctl_fan,
+	&kraken_fan,
 	NULL
 };
 
@@ -147,15 +142,19 @@ static int liquidctl_raw_event(struct hid_device *hdev,
 	/* print_hex_dump(KERN_DEBUG, DRVNAME, DUMP_PREFIX_OFFSET, 16, 4, data, */
 	/* 		size, false); */
 
+	/* FIXME correctly check this is the report we want */
 	if (size < 32) {
 		hid_err(hdev, "message too short: %d\n", size);
 		return -EINVAL;
 	}
 
-	/* FIXME add lock */
-	ldata->temp1 = data[1] * 1000 + data[2] * 100;
-	ldata->fan1 = be16_to_cpup((__be16 *)(data + 3));
-	ldata->fan2 = be16_to_cpup((__be16 *)(data + 5));
+	/* TODO do we need a lock, is long store atomic on *all* platforms? */
+	do {
+		/* TODO new devices */
+		ldata->temp_in[0] = data[1] * 1000 + data[2] * 100;
+		ldata->fan_in[0] = be16_to_cpup((__be16 *)(data + 3));
+		ldata->fan_in[1] = be16_to_cpup((__be16 *)(data + 5));
+	} while (false);
 	return 0;
 }
 
@@ -179,7 +178,25 @@ static int liquidctl_probe(struct hid_device *hdev,
 	if (!ldata)
 		return -ENOMEM;
 
-	hid_info(hdev, "device: " DEVNAME_KRAKEN_GEN3 "\n");
+	do {
+		/* TODO new devices */
+		hid_info(hdev, "device: " DEVNAME_KRAKEN_GEN3 "\n");
+		ldata->temp_count = KRAKEN_TEMP_COUNT;
+		ldata->fan_count = KRAKEN_FAN_COUNT;
+		ldata->temp_label = kraken_temp_label;
+		ldata->fan_label = kraken_fan_label;
+	} while (false);
+
+	ldata->temp_in = devm_kcalloc(&hdev->dev, ldata->temp_count,
+				      sizeof(*ldata->temp_in), GFP_KERNEL);
+	if (!ldata->temp_in)
+		return -ENOMEM;
+
+	ldata->fan_in = devm_kcalloc(&hdev->dev, ldata->fan_count,
+				     sizeof(*ldata->fan_in), GFP_KERNEL);
+	if (!ldata->fan_in)
+		return -ENOMEM;
+
 	ldata->hid_dev = hdev;
 	hid_set_drvdata(hdev, ldata);
 
