@@ -132,21 +132,25 @@ static const struct hwmon_chip_info kraken_chip_info = {
 	.info = kraken_info,
 };
 
+#define KRAKEN_STATUS_ID 4
+#define KRAKEN_STATUS_SIZE 16
+
 static int liquidctl_raw_event(struct hid_device *hdev,
 			       struct hid_report *report, u8 *data, int size)
 {
-	struct liquidctl_device_data *ldata = hid_get_drvdata(hdev);
+	struct liquidctl_device_data *ldata;
 
 	/* printk(KERN_DEBUG DRVNAME " raw_event report: id=%u, type=%u, application=%u, maxfield=%u, size=%u", */
 	/* 		report->id, report->type, report->application, report->maxfield, report->size); */
 	/* print_hex_dump(KERN_DEBUG, DRVNAME, DUMP_PREFIX_OFFSET, 16, 4, data, */
 	/* 		size, false); */
 
-	/* FIXME correctly check this is the report we want */
-	if (size < 32) {
-		hid_err(hdev, "message too short: %d\n", size);
+	if (report->id != KRAKEN_STATUS_ID)
+		return 0;
+	if (size < KRAKEN_STATUS_SIZE)
 		return -EINVAL;
-	}
+
+	ldata = hid_get_drvdata(hdev);
 
 	/* TODO do we need a lock, is long store atomic on *all* platforms? */
 	do {
