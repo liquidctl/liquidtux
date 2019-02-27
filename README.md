@@ -14,11 +14,11 @@ repository.
 This is the current state of the out-of-tree drivers.  As they mature they will
 be proposed to upstream.
 
-| Device | Summary | Parent | `temp*` | `fan*` | `pwm*` |
-| --- | --- | --- | --- | --- | --- |
-| NZXT Kraken X (X42, X52, X62 or X72) | WIP | `hid_device` | working | working | to do |
-| NZXT Smart Device | WIP | `hid_device` | – | partial | to do |
-| EVGA CLC (120 CL12, 240 or 280) | enqueued | `usb_interface` ||||
+| Device | Summary | Parent | `temp*` | `fan*` | `pwm*` | other |
+| --- | --- | --- | --- | --- | --- | --- |
+| NZXT Kraken X (X42, X52, X62 or X72) | WIP | `hid_device` | testing | testing | to do | – |
+| NZXT Smart Device | WIP | `hid_device` | – | WIP | to do | to do |
+| EVGA CLC (120 CL12, 240 or 280) | enqueued | `usb_interface` |||||
 
 A few other devices are reasonably well understood and might also be supported,
 though some help in testing and validation is necessary.
