@@ -10,9 +10,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 
-#define __passed printk(KERN_DEBUG DRVNAME ": passed %s:%d\n", __FUNCTION__, __LINE__);
-
-#define DRVNAME "liquidctl"  /* FIXME for upstream (hid x usb, hwmon x other) */
+#define DRVNAME "liquidctl"	/* FIXME hid x usb, hwmon x other, nzxt x other */
 
 struct liquidctl_device_data {
 	struct hid_device *hid_dev;
@@ -64,13 +62,13 @@ static int liquidctl_read_string(struct device *dev,
 	switch (type) {
 	case hwmon_temp:
 		if (attr != hwmon_temp_label || channel >= ldata->temp_count ||
-				!ldata->temp_label[channel])
+		    !ldata->temp_label[channel])
 			return -EINVAL;
 		*str = ldata->temp_label[channel];
 		break;
 	case hwmon_fan:
 		if (attr != hwmon_fan_label || channel >= ldata->fan_count ||
-				!ldata->fan_label[channel])
+		    !ldata->fan_label[channel])
 			return -EINVAL;
 		*str = ldata->fan_label[channel];
 		break;
@@ -86,7 +84,7 @@ static const struct hwmon_ops liquidctl_hwmon_ops = {
 	.read_string = liquidctl_read_string,
 };
 
-#define DEVNAME_KRAKEN_GEN3 "kraken"  /* FIXME not descriptive for user-space */
+#define DEVNAME_KRAKEN_GEN3 "kraken"	/* FIXME not precise for user-space */
 #define KRAKEN_TEMP_COUNT		1
 #define KRAKEN_FAN_COUNT		2
 
@@ -123,7 +121,7 @@ static const struct hwmon_channel_info kraken_fan = {
 static const struct hwmon_channel_info *kraken_info[] = {
 	&kraken_temp,
 	&kraken_fan,
-	NULL
+	NULL			/* TODO pwm */
 };
 
 static const struct hwmon_chip_info kraken_chip_info = {
@@ -131,7 +129,7 @@ static const struct hwmon_chip_info kraken_chip_info = {
 	.info = kraken_info,
 };
 
-#define DEVNAME_SMART_DEVICE "smart_device"  /* FIXME not descriptive for user-space */
+#define DEVNAME_SMART_DEVICE "smart_device"
 #define SMART_DEVICE_TEMP_COUNT		0
 #define SMART_DEVICE_FAN_COUNT		3
 
@@ -149,7 +147,7 @@ static const struct hwmon_channel_info smart_device_fan = {
 
 static const struct hwmon_channel_info *smart_device_info[] = {
 	&smart_device_fan,
-	NULL
+	NULL			/* TODO cur, in, pwm */
 };
 
 static const struct hwmon_chip_info smart_device_chip_info = {
@@ -164,29 +162,36 @@ static const struct hwmon_chip_info smart_device_chip_info = {
 #define STATUS_REPORT_ID		4
 #define STATUS_MIN_BYTES		16
 
+#define show_ctx() \
+	printk(KERN_DEBUG "%s:%d: irq: %lu, serving_softirq: %lu, nmi: %lu, task: %u\n", \
+	       __FUNCTION__, __LINE__, in_irq(), in_serving_softirq(), in_nmi(), in_task());
+
 static int liquidctl_raw_event(struct hid_device *hdev,
 			       struct hid_report *report, u8 *data, int size)
 {
 	struct liquidctl_device_data *ldata;
 	u8 channel;
 
+	/* TODO show_ctx(): in hard irq, how much should we do here? */
+
+	/* TODO we only want one report, specify it in hid_driver */
 	if (report->id != STATUS_REPORT_ID || size < STATUS_MIN_BYTES)
 		return 0;
 
 	ldata = hid_get_drvdata(hdev);
 
-	/* TODO do we need a lock, is long store atomic on *all* platforms? */
+	/* TODO reads don't need the latest data, but each store must be atomic */
 	switch (hdev->product) {
 	case USB_DEVICE_ID_KRAKEN_GEN3:
 		ldata->temp_in[0] = data[1] * 1000 + data[2] * 100;
-		ldata->fan_in[0] = be16_to_cpup((__be16 *)(data + 3));
-		ldata->fan_in[1] = be16_to_cpup((__be16 *)(data + 5));
+		ldata->fan_in[0] = be16_to_cpup((__be16 *) (data + 3));
+		ldata->fan_in[1] = be16_to_cpup((__be16 *) (data + 5));
 		break;
 	case USB_DEVICE_ID_SMART_DEVICE:
 		channel = data[15] >> 4;
 		if (channel >= ldata->fan_count)
 			return 0;
-		ldata->fan_in[channel] = be16_to_cpup((__be16 *)(data + 3));
+		ldata->fan_in[channel] = be16_to_cpup((__be16 *) (data + 3));
 		break;
 	default:
 		return 0;
@@ -199,6 +204,7 @@ static const struct hid_device_id liquidctl_table[] = {
 	{ HID_USB_DEVICE(USB_VENDOR_ID_NZXT, USB_DEVICE_ID_SMART_DEVICE) },
 	{ }
 };
+
 MODULE_DEVICE_TABLE(hid, liquidctl_table);
 
 static int liquidctl_probe(struct hid_device *hdev,
@@ -269,10 +275,8 @@ static int liquidctl_probe(struct hid_device *hdev,
 		goto rec_close_hid;
 	}
 
-	hwmon_dev = devm_hwmon_device_register_with_info(&hdev->dev,
-							 chip_name,
-							 ldata,
-							 chip_info,
+	hwmon_dev = devm_hwmon_device_register_with_info(&hdev->dev, chip_name,
+							 ldata, chip_info,
 							 NULL);
 	if (IS_ERR(hwmon_dev)) {
 		hid_err(hdev, "failed to register hwmon device\n");
@@ -310,4 +314,3 @@ module_hid_driver(liquidctl_driver);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jonas Malaco <jonas@protocubo.io>");
 MODULE_DESCRIPTION("Closed loop liquid coolers monitoring");
-
