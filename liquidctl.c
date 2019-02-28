@@ -18,10 +18,14 @@ struct liquidctl_device_data {
 
 	int temp_count;
 	int fan_count;
+	int in_count;
+	int curr_count;
 	const char *const *temp_label;
 	const char *const *fan_label;
-	long *temp_in;
-	long *fan_in;
+	long *temp_input;
+	long *fan_input;
+	long *in_input;
+	long *curr_input;
 };
 
 static umode_t liquidctl_is_visible(const void *data,
@@ -40,12 +44,22 @@ static int liquidctl_read(struct device *dev, enum hwmon_sensor_types type,
 	case hwmon_temp:
 		if (attr != hwmon_temp_input || channel >= ldata->temp_count)
 			return -EINVAL;
-		*val = ldata->temp_in[channel];
+		*val = ldata->temp_input[channel];
 		break;
 	case hwmon_fan:
 		if (attr != hwmon_fan_input || channel >= ldata->fan_count)
 			return -EINVAL;
-		*val = ldata->fan_in[channel];
+		*val = ldata->fan_input[channel];
+		break;
+	case hwmon_in:
+		if (attr != hwmon_in_input || channel >= ldata->in_count)
+			return -EINVAL;
+		*val = ldata->in_input[channel];
+		break;
+	case hwmon_curr:
+		if (attr != hwmon_curr_input || channel >= ldata->curr_count)
+			return -EINVAL;
+		*val = ldata->curr_input[channel];
 		break;
 	default:
 		return -EINVAL;
@@ -145,9 +159,35 @@ static const struct hwmon_channel_info smart_device_fan = {
 	.config = smart_device_fan_config,
 };
 
+static const u32 smart_device_in_config[] = {
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	0
+};
+
+static const struct hwmon_channel_info smart_device_in = {
+	.type = hwmon_in,
+	.config = smart_device_in_config,
+};
+
+static const u32 smart_device_curr_config[] = {
+	HWMON_C_INPUT,
+	HWMON_C_INPUT,
+	HWMON_C_INPUT,
+	0
+};
+
+static const struct hwmon_channel_info smart_device_curr = {
+	.type = hwmon_curr,
+	.config = smart_device_curr_config,
+};
+
 static const struct hwmon_channel_info *smart_device_info[] = {
 	&smart_device_fan,
-	NULL			/* TODO cur, in, pwm */
+	&smart_device_in,
+	&smart_device_curr,
+	NULL			/* TODO pwm */
 };
 
 static const struct hwmon_chip_info smart_device_chip_info = {
@@ -183,15 +223,17 @@ static int liquidctl_raw_event(struct hid_device *hdev,
 	/* TODO reads don't need the latest data, but each store must be atomic */
 	switch (hdev->product) {
 	case USB_DEVICE_ID_KRAKEN_GEN3:
-		ldata->temp_in[0] = data[1] * 1000 + data[2] * 100;
-		ldata->fan_in[0] = be16_to_cpup((__be16 *) (data + 3));
-		ldata->fan_in[1] = be16_to_cpup((__be16 *) (data + 5));
+		ldata->temp_input[0] = data[1] * 1000 + data[2] * 100;
+		ldata->fan_input[0] = be16_to_cpup((__be16 *) (data + 3));
+		ldata->fan_input[1] = be16_to_cpup((__be16 *) (data + 5));
 		break;
 	case USB_DEVICE_ID_SMART_DEVICE:
 		channel = data[15] >> 4;
 		if (channel >= ldata->fan_count)
 			return 0;
-		ldata->fan_in[channel] = be16_to_cpup((__be16 *) (data + 3));
+		ldata->fan_input[channel] = be16_to_cpup((__be16 *) (data + 3));
+		ldata->in_input[channel] = data[7] * 1000 + data[8] * 10;
+		ldata->curr_input[channel] = data[9] * 1000 + data[10] * 10;
 		break;
 	default:
 		return 0;
@@ -225,6 +267,8 @@ static int liquidctl_probe(struct hid_device *hdev,
 		chip_name = DEVNAME_KRAKEN_GEN3;
 		ldata->temp_count = KRAKEN_TEMP_COUNT;
 		ldata->fan_count = KRAKEN_FAN_COUNT;
+		ldata->in_count = 0; /* FIXME */
+		ldata->curr_count = 0; /* FIXME */
 		ldata->temp_label = kraken_temp_label;
 		ldata->fan_label = kraken_fan_label;
 		chip_info = &kraken_chip_info;
@@ -233,6 +277,8 @@ static int liquidctl_probe(struct hid_device *hdev,
 		chip_name = DEVNAME_SMART_DEVICE;
 		ldata->temp_count = SMART_DEVICE_TEMP_COUNT;
 		ldata->fan_count = SMART_DEVICE_FAN_COUNT;
+		ldata->in_count = SMART_DEVICE_FAN_COUNT;
+		ldata->curr_count = SMART_DEVICE_FAN_COUNT;
 		ldata->temp_label = NULL;
 		ldata->fan_label = NULL;
 		chip_info = &smart_device_chip_info;
@@ -242,14 +288,24 @@ static int liquidctl_probe(struct hid_device *hdev,
 	}
 	hid_info(hdev, "device: %s\n", chip_name);
 
-	ldata->temp_in = devm_kcalloc(&hdev->dev, ldata->temp_count,
-				      sizeof(*ldata->temp_in), GFP_KERNEL);
-	if (!ldata->temp_in)
+	ldata->temp_input = devm_kcalloc(&hdev->dev, ldata->temp_count,
+				      sizeof(*ldata->temp_input), GFP_KERNEL);
+	if (!ldata->temp_input)
 		return -ENOMEM;
 
-	ldata->fan_in = devm_kcalloc(&hdev->dev, ldata->fan_count,
-				     sizeof(*ldata->fan_in), GFP_KERNEL);
-	if (!ldata->fan_in)
+	ldata->fan_input = devm_kcalloc(&hdev->dev, ldata->fan_count,
+				     sizeof(*ldata->fan_input), GFP_KERNEL);
+	if (!ldata->fan_input)
+		return -ENOMEM;
+
+	ldata->in_input = devm_kcalloc(&hdev->dev, ldata->in_count,
+				     sizeof(*ldata->in_input), GFP_KERNEL);
+	if (!ldata->in_input)
+		return -ENOMEM;
+
+	ldata->curr_input = devm_kcalloc(&hdev->dev, ldata->curr_count,
+				     sizeof(*ldata->curr_input), GFP_KERNEL);
+	if (!ldata->curr_input)
 		return -ENOMEM;
 
 	ldata->hid_dev = hdev;

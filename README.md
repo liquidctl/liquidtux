@@ -16,8 +16,8 @@ be proposed to upstream.
 
 | Device | Summary | Parent | `temp*` | `fan*` | `pwm*` | other |
 | --- | --- | --- | --- | --- | --- | --- |
-| NZXT Kraken X (X42, X52, X62 or X72) | WIP | `hid_device` | testing | testing | to do | – |
-| NZXT Smart Device | WIP | `hid_device` | – | WIP | to do | to do |
+| NZXT Kraken X (X42, X52, X62 or X72) | WIP | `hid_device` | testing | testing | to do | to do: `*_fault` |
+| NZXT Smart Device | WIP | `hid_device` | – | WIP | to do | WIP: `in*`, `curr*` |
 | EVGA CLC (120 CL12, 240 or 280) | enqueued | `usb_interface` |||||
 
 A few other devices are reasonably well understood and might also be supported,
