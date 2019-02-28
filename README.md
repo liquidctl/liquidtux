@@ -21,7 +21,7 @@ built module can then be loaded with `insmod`; later the module can be removed
 with `rmmod` or `modprobe`.
 
 ```
-> make
+$ make
 # insmod liquidctl.ko
 ```
 
