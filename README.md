@@ -20,15 +20,15 @@ be proposed to upstream.
 | NZXT Smart Device | WIP | `hid_device` | `smart_device` |
 | EVGA CLC (120 CL12, 240 or 280) | enqueued | `usb_interface` ||
 
-All available sensors will eventually be supported.
+All available sensors will eventually be supported:
 
 | Device | `temp*` | `fan*` | `pwm*` | `in*` | `curr*` | `*_fault` |
 | --- | --- | --- | --- | --- | --- | --- |
 | NZXT Kraken X (X42, X52, X62 or X72) | testing | testing | to do | – | – | to do |
-| NZXT Smart Device | – | WIP | to do | WIP | WIP | – |
+| NZXT Smart Device | – | testing | to do | testing | testing | – |
 
-A few other devices are reasonably well understood and might also be supported,
-though some help in testing and validation is necessary.
+A few more devices are reasonably well understood and might be supported,
+but some help with testing and validation is necessary.
 
 | Device | Summary | Notes |
 | --- | --- | --- |
