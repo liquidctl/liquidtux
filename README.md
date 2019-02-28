@@ -14,11 +14,18 @@ repository.
 This is the current state of the out-of-tree drivers.  As they mature they will
 be proposed to upstream.
 
-| Device | Summary | Parent | `temp*` | `fan*` | `pwm*` | other |
+| Device | Summary | Parent | hwmon name |
+| --- | --- | --- | --- |
+| NZXT Kraken X (X42, X52, X62 or X72) | WIP | `hid_device` | `kraken` |
+| NZXT Smart Device | WIP | `hid_device` | `smart_device` |
+| EVGA CLC (120 CL12, 240 or 280) | enqueued | `usb_interface` ||
+
+All available sensors will eventually be supported.
+
+| Device | `temp*` | `fan*` | `pwm*` | `in*` | `curr*` | `*_fault` |
 | --- | --- | --- | --- | --- | --- | --- |
-| NZXT Kraken X (X42, X52, X62 or X72) | WIP | `hid_device` | testing | testing | to do | to do: `*_fault` |
-| NZXT Smart Device | WIP | `hid_device` | – | WIP | to do | WIP: `in*`, `curr*` |
-| EVGA CLC (120 CL12, 240 or 280) | enqueued | `usb_interface` |||||
+| NZXT Kraken X (X42, X52, X62 or X72) | testing | testing | to do | – | – | to do |
+| NZXT Smart Device | – | WIP | to do | WIP | WIP | – |
 
 A few other devices are reasonably well understood and might also be supported,
 though some help in testing and validation is necessary.
