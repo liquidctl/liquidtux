@@ -11,6 +11,35 @@ knowledge of how the devices work.  For more information, read the
 documentation of the [hwmon sysfs interface] and check the [lm-sensors]
 repository.
 
+## Building, inserting and installing
+
+The drivers should be built with the [kbuild
+system](https://github.com/torvalds/linux/blob/master/Documentation/kbuild/modules.txt).
+
+A simple Makefile is provided that simplifies this in normal scenarios.  The
+built module can then be loaded with `insmod`; later the module can be removed
+with `rmmod` or `modprobe`.
+
+```
+> make
+# insmod liquidctl.ko
+```
+
+To install the module, under normal circumstances, use `modules_install`
+target:
+
+```
+# make modules_install
+```
+
+As long as usbhid is loaded and has (automatically) bound to the devices,
+liquidctl should, when loaded, connect and make the sensors available on the
+hwmon sysfs interface.
+
+_Note: presumably udev policies can affect that; still looking into this..._
+
+## Device support
+
 This is the current state of the out-of-tree drivers.  As they mature they will
 be proposed to upstream.
 
@@ -26,6 +55,8 @@ All available sensors will eventually be supported:
 | --- | --- | --- | --- | --- | --- | --- |
 | NZXT Kraken X (X42, X52, X62 or X72) | testing | testing | to do | – | – | to do |
 | NZXT Smart Device | – | testing | to do | testing | testing | – |
+
+## Future devices
 
 A few more devices are reasonably well understood and might be supported,
 but some help with testing and validation is necessary.
