@@ -17,7 +17,7 @@ struct krx62_device_data {
 	struct device *hwmon_dev;
 
 	long temp_input;
-	long *fan_input;
+	long fan_input[KRX62_RPM_INPUTS];
 };
 
 static umode_t krx62_is_visible(const void *data,
@@ -175,11 +175,6 @@ static int krx62_probe(struct hid_device *hdev,
 	chip_name = DEVNAME_KRAKEN_GEN3;
 	chip_info = &krx62_chip_info;
 	hid_info(hdev, "device: %s\n", chip_name);
-
-	ldata->fan_input = devm_kcalloc(&hdev->dev, KRX62_RPM_INPUTS,
-				     sizeof(*ldata->fan_input), GFP_KERNEL);
-	if (!ldata->fan_input)
-		return -ENOMEM;
 
 	ldata->hid_dev = hdev;
 	hid_set_drvdata(hdev, ldata);
