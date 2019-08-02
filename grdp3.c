@@ -10,7 +10,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 
-#define DRVNAME "liquidctl"	/* FIXME grdp3 */
+#define DRVNAME		"grdp3"
 
 struct liquidctl_device_data {
 	struct hid_device *hid_dev;
