@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * liquidctl.c - hwmon for closed-loop liquid coolers or AIOs
+ * liquidctl.c - hwmon driver for the NZXT Smart Device and Grid+ V3
  *
  * Copyright 2019  Jonas Malaco <jonas@protocubo.io>
  */
@@ -10,7 +10,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 
-#define DRVNAME "liquidctl"	/* FIXME hid x usb, hwmon x other, nzxt x other */
+#define DRVNAME "liquidctl"	/* FIXME grdp3 */
 
 struct liquidctl_device_data {
 	struct hid_device *hid_dev;
@@ -98,51 +98,6 @@ static const struct hwmon_ops liquidctl_hwmon_ops = {
 	.read_string = liquidctl_read_string,
 };
 
-#define DEVNAME_KRAKEN_GEN3 "kraken"	/* FIXME not precise for user-space */
-#define KRAKEN_TEMP_COUNT		1
-#define KRAKEN_FAN_COUNT		2
-
-static const char *const kraken_temp_label[] = {
-	"Coolant",
-};
-
-static const u32 kraken_temp_config[] = {
-	HWMON_T_INPUT | HWMON_T_LABEL,
-	0
-};
-
-static const u32 kraken_fan_config[] = {
-	HWMON_F_INPUT,
-	HWMON_F_INPUT | HWMON_F_LABEL,
-	0
-};
-
-static const char *const kraken_fan_label[] = {
-	NULL,
-	"Pump",
-};
-
-static const struct hwmon_channel_info kraken_temp = {
-	.type = hwmon_temp,
-	.config = kraken_temp_config,
-};
-
-static const struct hwmon_channel_info kraken_fan = {
-	.type = hwmon_fan,
-	.config = kraken_fan_config,
-};
-
-static const struct hwmon_channel_info *kraken_info[] = {
-	&kraken_temp,
-	&kraken_fan,
-	NULL			/* TODO pwm */
-};
-
-static const struct hwmon_chip_info kraken_chip_info = {
-	.ops = &liquidctl_hwmon_ops,
-	.info = kraken_info,
-};
-
 #define DEVNAME_SMART_DEVICE "smart_device"
 #define SMART_DEVICE_TEMP_COUNT		0
 #define SMART_DEVICE_FAN_COUNT		3
@@ -196,8 +151,8 @@ static const struct hwmon_chip_info smart_device_chip_info = {
 };
 
 #define USB_VENDOR_ID_NZXT		0x1e71
-#define USB_DEVICE_ID_KRAKEN_GEN3	0x170e
 #define USB_DEVICE_ID_SMART_DEVICE	0x1714
+/* FIXME GRID+ V3 */
 
 #define STATUS_REPORT_ID		4
 #define STATUS_MIN_BYTES		16
@@ -222,11 +177,6 @@ static int liquidctl_raw_event(struct hid_device *hdev,
 
 	/* TODO reads don't need the latest data, but each store must be atomic */
 	switch (hdev->product) {
-	case USB_DEVICE_ID_KRAKEN_GEN3:
-		ldata->temp_input[0] = data[1] * 1000 + data[2] * 100;
-		ldata->fan_input[0] = be16_to_cpup((__be16 *) (data + 3));
-		ldata->fan_input[1] = be16_to_cpup((__be16 *) (data + 5));
-		break;
 	case USB_DEVICE_ID_SMART_DEVICE:
 		channel = data[15] >> 4;
 		if (channel >= ldata->fan_count)
@@ -235,6 +185,7 @@ static int liquidctl_raw_event(struct hid_device *hdev,
 		ldata->in_input[channel] = data[7] * 1000 + data[8] * 10;
 		ldata->curr_input[channel] = data[9] * 1000 + data[10] * 10;
 		break;
+	/* TODO Grid+ V3 */
 	default:
 		return 0;
 	}
@@ -243,6 +194,7 @@ static int liquidctl_raw_event(struct hid_device *hdev,
 
 static const struct hid_device_id liquidctl_table[] = {
 	{ HID_USB_DEVICE(USB_VENDOR_ID_NZXT, USB_DEVICE_ID_SMART_DEVICE) },
+	/* TODO Grid+ V3 */
 	{ }
 };
 
@@ -262,16 +214,6 @@ static int liquidctl_probe(struct hid_device *hdev,
 		return -ENOMEM;
 
 	switch (hdev->product) {
-	case USB_DEVICE_ID_KRAKEN_GEN3:
-		chip_name = DEVNAME_KRAKEN_GEN3;
-		ldata->temp_count = KRAKEN_TEMP_COUNT;
-		ldata->fan_count = KRAKEN_FAN_COUNT;
-		ldata->in_count = 0; /* FIXME */
-		ldata->curr_count = 0; /* FIXME */
-		ldata->temp_label = kraken_temp_label;
-		ldata->fan_label = kraken_fan_label;
-		chip_info = &kraken_chip_info;
-		break;
 	case USB_DEVICE_ID_SMART_DEVICE:
 		chip_name = DEVNAME_SMART_DEVICE;
 		ldata->temp_count = SMART_DEVICE_TEMP_COUNT;
@@ -282,6 +224,7 @@ static int liquidctl_probe(struct hid_device *hdev,
 		ldata->fan_label = NULL;
 		chip_info = &smart_device_chip_info;
 		break;
+	/* TODO Grid+ V3 */
 	default:
 		return -EINVAL;
 	}
@@ -368,4 +311,4 @@ module_hid_driver(liquidctl_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jonas Malaco <jonas@protocubo.io>");
-MODULE_DESCRIPTION("Closed loop liquid coolers monitoring");
+MODULE_DESCRIPTION("Hwmon driver for NZXT Smart Device and Grid+ V3");
