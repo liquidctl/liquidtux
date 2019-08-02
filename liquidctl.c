@@ -242,7 +242,6 @@ static int liquidctl_raw_event(struct hid_device *hdev,
 }
 
 static const struct hid_device_id liquidctl_table[] = {
-	{ HID_USB_DEVICE(USB_VENDOR_ID_NZXT, USB_DEVICE_ID_KRAKEN_GEN3) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_NZXT, USB_DEVICE_ID_SMART_DEVICE) },
 	{ }
 };
