@@ -10,17 +10,13 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 
-#define DRVNAME "krx62"	
+#define KRX62_RPM_INPUTS		2
 
 struct krx62_device_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
 
-	int temp_count;
-	int fan_count;
-	const char *const *temp_label;
-	const char *const *fan_label;
-	long *temp_input;
+	long temp_input;
 	long *fan_input;
 };
 
@@ -38,12 +34,12 @@ static int krx62_read(struct device *dev, enum hwmon_sensor_types type,
 
 	switch (type) {
 	case hwmon_temp:
-		if (attr != hwmon_temp_input || channel >= ldata->temp_count)
+		if (attr != hwmon_temp_input)
 			return -EINVAL;
-		*val = ldata->temp_input[channel];
+		*val = ldata->temp_input;
 		break;
 	case hwmon_fan:
-		if (attr != hwmon_fan_input || channel >= ldata->fan_count)
+		if (attr != hwmon_fan_input || channel >= KRX62_RPM_INPUTS)
 			return -EINVAL;
 		*val = ldata->fan_input[channel];
 		break;
@@ -53,24 +49,31 @@ static int krx62_read(struct device *dev, enum hwmon_sensor_types type,
 	return 0;
 }
 
+static const char *const krx62_temp_label[] = {
+	"Coolant",
+};
+
+static const char *const krx62_fan_label[] = {
+	NULL,
+	"Pump",
+};
+
 static int krx62_read_string(struct device *dev,
 			     enum hwmon_sensor_types type, u32 attr,
 			     int channel, const char **str)
 {
-	struct krx62_device_data *ldata = dev_get_drvdata(dev);
-
 	switch (type) {
 	case hwmon_temp:
-		if (attr != hwmon_temp_label || channel >= ldata->temp_count ||
-		    !ldata->temp_label[channel])
+		if (attr != hwmon_temp_label || channel >= ARRAY_SIZE(krx62_temp_label) ||
+		    !krx62_temp_label[channel])
 			return -EINVAL;
-		*str = ldata->temp_label[channel];
+		*str = krx62_temp_label[channel];
 		break;
 	case hwmon_fan:
-		if (attr != hwmon_fan_label || channel >= ldata->fan_count ||
-		    !ldata->fan_label[channel])
+		if (attr != hwmon_fan_label || channel >= ARRAY_SIZE(krx62_fan_label) ||
+		    !krx62_fan_label[channel])
 			return -EINVAL;
-		*str = ldata->fan_label[channel];
+		*str = krx62_fan_label[channel];
 		break;
 	default:
 		return -EINVAL;
@@ -84,49 +87,39 @@ static const struct hwmon_ops krx62_hwmon_ops = {
 	.read_string = krx62_read_string,
 };
 
-#define DEVNAME_KRAKEN_GEN3 "kraken"	/* FIXME not precise for user-space */
-#define KRAKEN_TEMP_COUNT		1
-#define KRAKEN_FAN_COUNT		2
+#define DEVNAME_KRAKEN_GEN3	"kraken"  /* FIXME */
 
-static const char *const kraken_temp_label[] = {
-	"Coolant",
-};
-
-static const u32 kraken_temp_config[] = {
+static const u32 krx62_temp_config[] = {
 	HWMON_T_INPUT | HWMON_T_LABEL,
 	0
 };
 
-static const u32 kraken_fan_config[] = {
+static const u32 krx62_fan_config[] = {
 	HWMON_F_INPUT,
 	HWMON_F_INPUT | HWMON_F_LABEL,
 	0
 };
 
-static const char *const kraken_fan_label[] = {
-	NULL,
-	"Pump",
-};
 
-static const struct hwmon_channel_info kraken_temp = {
+static const struct hwmon_channel_info krx62_temp = {
 	.type = hwmon_temp,
-	.config = kraken_temp_config,
+	.config = krx62_temp_config,
 };
 
-static const struct hwmon_channel_info kraken_fan = {
+static const struct hwmon_channel_info krx62_fan = {
 	.type = hwmon_fan,
-	.config = kraken_fan_config,
+	.config = krx62_fan_config,
 };
 
-static const struct hwmon_channel_info *kraken_info[] = {
-	&kraken_temp,
-	&kraken_fan,
+static const struct hwmon_channel_info *krx62_info[] = {
+	&krx62_temp,
+	&krx62_fan,
 	NULL			/* TODO pwm */
 };
 
-static const struct hwmon_chip_info kraken_chip_info = {
+static const struct hwmon_chip_info krx62_chip_info = {
 	.ops = &krx62_hwmon_ops,
-	.info = kraken_info,
+	.info = krx62_info,
 };
 
 #define USB_VENDOR_ID_NZXT		0x1e71
@@ -153,7 +146,7 @@ static int krx62_raw_event(struct hid_device *hdev,
 	ldata = hid_get_drvdata(hdev);
 
 	/* FIXME missing locking */
-	ldata->temp_input[0] = data[1] * 1000 + data[2] * 100;
+	ldata->temp_input = data[1] * 1000 + data[2] * 100;
 	ldata->fan_input[0] = be16_to_cpup((__be16 *) (data + 3));
 	ldata->fan_input[1] = be16_to_cpup((__be16 *) (data + 5));
 	return 0;
@@ -167,7 +160,7 @@ static const struct hid_device_id krx62_table[] = {
 MODULE_DEVICE_TABLE(hid, krx62_table);
 
 static int krx62_probe(struct hid_device *hdev,
-			   const struct hid_device_id *id)
+		       const struct hid_device_id *id)
 {
 	struct krx62_device_data *ldata;
 	struct device *hwmon_dev;
@@ -180,19 +173,10 @@ static int krx62_probe(struct hid_device *hdev,
 		return -ENOMEM;
 
 	chip_name = DEVNAME_KRAKEN_GEN3;
-	ldata->temp_count = KRAKEN_TEMP_COUNT;
-	ldata->fan_count = KRAKEN_FAN_COUNT;
-	ldata->temp_label = kraken_temp_label;
-	ldata->fan_label = kraken_fan_label;
-	chip_info = &kraken_chip_info;
+	chip_info = &krx62_chip_info;
 	hid_info(hdev, "device: %s\n", chip_name);
 
-	ldata->temp_input = devm_kcalloc(&hdev->dev, ldata->temp_count,
-				      sizeof(*ldata->temp_input), GFP_KERNEL);
-	if (!ldata->temp_input)
-		return -ENOMEM;
-
-	ldata->fan_input = devm_kcalloc(&hdev->dev, ldata->fan_count,
+	ldata->fan_input = devm_kcalloc(&hdev->dev, KRX62_RPM_INPUTS,
 				     sizeof(*ldata->fan_input), GFP_KERNEL);
 	if (!ldata->fan_input)
 		return -ENOMEM;
@@ -247,7 +231,7 @@ static void krx62_remove(struct hid_device *hdev)
 }
 
 static struct hid_driver krx62_driver = {
-	.name = DRVNAME,
+	.name = "krx62",
 	.id_table = krx62_table,
 	.probe = krx62_probe,
 	.remove = krx62_remove,
