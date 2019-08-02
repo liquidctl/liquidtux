@@ -22,7 +22,8 @@ with `rmmod` or `modprobe`.
 
 ```
 $ make
-# insmod liquidctl.ko
+# insmod krx62.ko
+# insmod grdp3.ko
 ```
 
 To install the module, under normal circumstances, use `modules_install`
@@ -32,8 +33,8 @@ target:
 # make modules_install
 ```
 
-As long as usbhid is loaded and has (automatically) bound to the devices,
-liquidctl should, when loaded, connect and make the sensors available on the
+As long as usbhid is loaded and has (automatically) bound to the devices, these
+drivers should, when loaded, connect and make the sensors available on the
 hwmon sysfs interface.
 
 _Note: presumably udev policies can affect that; still looking into this..._
