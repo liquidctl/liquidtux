@@ -229,4 +229,4 @@ module_hid_driver(krx62_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jonas Malaco <jonas@protocubo.io>");
-MODULE_DESCRIPTION("Closed loop liquid coolers monitoring");
+MODULE_DESCRIPTION("Hwmon driver for NZXT Kraken X42/X52/X62/X72");
