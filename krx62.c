@@ -24,7 +24,7 @@ static umode_t krx62_is_visible(const void *data,
 				enum hwmon_sensor_types type,
 				u32 attr, int channel)
 {
-	return S_IRUGO;
+	return 0444;
 }
 
 static int krx62_read(struct device *dev, enum hwmon_sensor_types type,
