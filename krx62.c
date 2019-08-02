@@ -34,12 +34,10 @@ static int krx62_read(struct device *dev, enum hwmon_sensor_types type,
 
 	switch (type) {
 	case hwmon_temp:
-		if (attr != hwmon_temp_input)
-			return -EINVAL;
 		*val = ldata->temp_input;
 		break;
 	case hwmon_fan:
-		if (attr != hwmon_fan_input || channel >= KRX62_RPM_INPUTS)
+		if (channel >= KRX62_RPM_INPUTS)
 			return -EINVAL;
 		*val = ldata->fan_input[channel];
 		break;
@@ -49,9 +47,7 @@ static int krx62_read(struct device *dev, enum hwmon_sensor_types type,
 	return 0;
 }
 
-static const char *const krx62_temp_label[] = {
-	"Coolant",
-};
+#define KRX62_TEMP_LABEL		"Coolant"
 
 static const char *const krx62_fan_label[] = {
 	NULL,
@@ -64,14 +60,10 @@ static int krx62_read_string(struct device *dev,
 {
 	switch (type) {
 	case hwmon_temp:
-		if (attr != hwmon_temp_label || channel >= ARRAY_SIZE(krx62_temp_label) ||
-		    !krx62_temp_label[channel])
-			return -EINVAL;
-		*str = krx62_temp_label[channel];
+		*str = KRX62_TEMP_LABEL;
 		break;
 	case hwmon_fan:
-		if (attr != hwmon_fan_label || channel >= ARRAY_SIZE(krx62_fan_label) ||
-		    !krx62_fan_label[channel])
+		if (channel >= KRX62_RPM_INPUTS || !krx62_fan_label[channel])
 			return -EINVAL;
 		*str = krx62_fan_label[channel];
 		break;
@@ -87,7 +79,7 @@ static const struct hwmon_ops krx62_hwmon_ops = {
 	.read_string = krx62_read_string,
 };
 
-#define DEVNAME_KRAKEN_GEN3	"kraken"  /* FIXME */
+#define DEVNAME_KRAKEN_GEN3	"krakenx"  /* FIXME */
 
 static const u32 krx62_temp_config[] = {
 	HWMON_T_INPUT | HWMON_T_LABEL,
