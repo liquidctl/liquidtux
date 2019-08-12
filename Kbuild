@@ -1,3 +1,1 @@
-obj-m := grdp3.o
-obj-m := krx62.o
-
+obj-m := krx62.o grdp3.o
