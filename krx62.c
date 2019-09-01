@@ -37,8 +37,6 @@ static int krx62_read(struct device *dev, enum hwmon_sensor_types type,
 		*val = ldata->temp_input;
 		break;
 	case hwmon_fan:
-		if (channel >= KRX62_RPM_INPUTS)
-			return -EINVAL;
 		*val = ldata->fan_input[channel];
 		break;
 	default:
@@ -63,8 +61,6 @@ static int krx62_read_string(struct device *dev,
 		*str = KRX62_TEMP_LABEL;
 		break;
 	case hwmon_fan:
-		if (channel >= KRX62_RPM_INPUTS || !krx62_fan_label[channel])
-			return -EINVAL;
 		*str = krx62_fan_label[channel];
 		break;
 	default:
