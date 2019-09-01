@@ -81,31 +81,9 @@ static const struct hwmon_ops krx62_hwmon_ops = {
 
 #define DEVNAME_KRAKEN_GEN3	"krakenx"  /* FIXME */
 
-static const u32 krx62_temp_config[] = {
-	HWMON_T_INPUT | HWMON_T_LABEL,
-	0
-};
-
-static const u32 krx62_fan_config[] = {
-	HWMON_F_INPUT,
-	HWMON_F_INPUT | HWMON_F_LABEL,
-	0
-};
-
-
-static const struct hwmon_channel_info krx62_temp = {
-	.type = hwmon_temp,
-	.config = krx62_temp_config,
-};
-
-static const struct hwmon_channel_info krx62_fan = {
-	.type = hwmon_fan,
-	.config = krx62_fan_config,
-};
-
 static const struct hwmon_channel_info *krx62_info[] = {
-	&krx62_temp,
-	&krx62_fan,
+	HWMON_CHANNEL_INFO(temp, HWMON_T_INPUT | HWMON_T_LABEL),
+	HWMON_CHANNEL_INFO(fan, HWMON_F_INPUT, HWMON_F_INPUT | HWMON_F_LABEL),
 	NULL			/* TODO pwm */
 };
 
