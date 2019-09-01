@@ -50,7 +50,7 @@ static int krx62_read(struct device *dev, enum hwmon_sensor_types type,
 #define KRX62_TEMP_LABEL		"Coolant"
 
 static const char *const krx62_fan_label[] = {
-	NULL,
+	"Fans",
 	"Pump",
 };
 
@@ -83,7 +83,7 @@ static const struct hwmon_ops krx62_hwmon_ops = {
 
 static const struct hwmon_channel_info *krx62_info[] = {
 	HWMON_CHANNEL_INFO(temp, HWMON_T_INPUT | HWMON_T_LABEL),
-	HWMON_CHANNEL_INFO(fan, HWMON_F_INPUT, HWMON_F_INPUT | HWMON_F_LABEL),
+	HWMON_CHANNEL_INFO(fan, HWMON_F_INPUT | HWMON_F_LABEL, HWMON_F_INPUT | HWMON_F_LABEL),
 	NULL			/* TODO pwm */
 };
 
