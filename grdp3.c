@@ -192,6 +192,21 @@ static int liquidctl_raw_event(struct hid_device *hdev,
 	return 0;
 }
 
+static int grdp3_initialize(struct hid_device *hdev)
+{
+	u8 data[2][2] = {{0x1, 0x5c}, {0x1, 0x5d}};
+	int i, ret;
+
+	for (i = 0; i < ARRAY_SIZE(data); i++) {
+		ret = hid_hw_output_report(hdev, data[i], ARRAY_SIZE(data[i]));
+		if (ret < 0)
+			return ret;
+		if (ret != 2)
+			return -EINVAL;
+	}
+	return 0;
+}
+
 static const struct hid_device_id liquidctl_table[] = {
 	{ HID_USB_DEVICE(USB_VENDOR_ID_NZXT, USB_DEVICE_ID_SMART_DEVICE) },
 	/* TODO Grid+ V3 */
@@ -282,6 +297,12 @@ static int liquidctl_probe(struct hid_device *hdev,
 		goto rec_close_hid;
 	}
 	ldata->hwmon_dev = hwmon_dev;
+
+	ret = grdp3_initialize(hdev);
+	if (ret) {
+		hid_err(hdev, "failed to initialize device");
+		goto rec_close_hid;
+	}
 
 	hid_info(hdev, "probing successful\n");
 	return 0;
