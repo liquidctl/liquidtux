@@ -1,4 +1,6 @@
-# Linux kernel hwmon drivers for AIO liquid coolers and other devices
+# liquidtux
+
+_Linux kernel hwmon drivers for AIO liquid coolers and other devices_
 
 The goal of this project is to offer hwmon drivers for closed-loop liquid
 coolers and other devices supported by [liquidctl], making their sensor data
@@ -13,7 +15,7 @@ repository.
 ## Installing with DKMS
 
 ArchLinux users can try the [liquidtux-dkms-git<sup>AUR</sup>][liquidtux-dkms-git-aur] package.
-After the package is installed, manually load the desired drivers:
+After the package is installed, manually load the desired drivers.
 
 ```
 # modprobe krx62  # Kraken X42, X52, X62, X72
@@ -29,36 +31,31 @@ The drivers should be built with the [kbuild
 system](https://github.com/torvalds/linux/blob/master/Documentation/kbuild/modules.txt).
 
 A simple Makefile is provided that simplifies this in normal scenarios.  The
-built module can then be loaded with `insmod`; later the module can be removed
-with `rmmod` or `modprobe`.
+built modules can then be loaded with `insmod`.
 
 ```
 $ make
-# insmod krx62.ko
-# insmod grdp3.ko
+# insmod krx62.ko  # Kraken X42, X52, X62, X72
+# insmod grdp3.ko  # Smart Device (V1)
 ```
 
-To install the module, under normal circumstances, use `modules_install`
-target:
+To unload them, use `rmmod` or `modprobe -r`.
+
+If testing was successful the modules can be installed to the system with the
+`modules_install` target:
 
 ```
 # make modules_install
 ```
 
-As long as usbhid is loaded and has (automatically) bound to the devices, these
-drivers should, when loaded, connect and make the sensors available on the
-hwmon sysfs interface.
-
-_Note: presumably udev policies can affect that; still looking into this..._
-
 ## Device support
 
 This is the current state of the out-of-tree drivers.
 
-| Device | State | Parent | hwmon name | 
+| Device | State | device driver | hwmon driver |
 | --- | --- | --- | --- |
-| NZXT Kraken X42, X52, X62, X72 | hackish but using 24/7 | `hid_device` | `krakenx` |
-| NZXT Smart Device (V1) | hackish but using 24/7 | `hid_device` | `smart_device` |
+| NZXT Kraken X42, X52, X62, X72 | hackish but using 24/7 | `krx62` | `krakenx` |
+| NZXT Smart Device (V1) | hackish but using 24/7 | `grdp3` | `smart_device` |
 
 Once the drivers are mature they will be proposed to upstream.
 
