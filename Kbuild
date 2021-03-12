@@ -1,1 +1,1 @@
-obj-m := krx62.o grdp3.o
+obj-m := nzxt-kraken2.o grdp3.o
