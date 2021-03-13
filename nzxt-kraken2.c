@@ -11,9 +11,6 @@
 #include <linux/module.h>
 #include <linux/spinlock.h>
 
-#define DRIVER_NAME	"nzxt-kraken2"
-#define HWMON_NAME	"kraken2"
-
 #define STATUS_REPORT		0x04
 #define STATUS_USEFUL_SIZE	8
 
@@ -51,12 +48,11 @@ static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
 	switch (type) {
 	case hwmon_temp:
 		/*
-		 * status[2] has been observed to be in the interval [1,9], but
-		 * some steps are skipped for certain status[1] values; a 1/9
-		 * °C precision would also be very odd.  Just do the simple
-		 * thing and assume status[2] is the number of 0.1 °C
-		 * increments, and consider that the possible inaccuracy is too
-		 * small to matter in practice.
+		 * The fractional byte has been observed to be in the interval
+		 * [1,9], and certain steps are consistently skipped for some
+		 * integer parts.  For the lack of a better idea, assume that
+		 * the resolution is 0.1°C, and that missing steps are caused
+		 * by how the firmware converts the raw sensor data.
 		 */
 		spin_lock_irqsave(&priv->lock, flags);
 		*val = priv->status[1] * 1000 + priv->status[2] * 100;
@@ -146,40 +142,40 @@ static int kraken2_probe(struct hid_device *hdev,
 
 	ret = hid_parse(hdev);
 	if (ret) {
-		hid_err(hdev, "hid_parse failed with %d\n", ret);
+		hid_err(hdev, "hid parse failed with %d\n", ret);
 		return ret;
 	}
 
 	/*
-	 * Enable hidraw so existing user-space tools can continue to work and
-	 * provide additional functionality, at least for now.
+	 * Enable hidraw so existing user-space tools can continue to work.
+	 * provide additional functionality.
 	 */
 	ret = hid_hw_start(hdev, HID_CONNECT_HIDRAW);
 	if (ret) {
-		hid_err(hdev, "hid_hw_start failed with %d\n", ret);
-		goto rec_stop_hid;
+		hid_err(hdev, "hid hw start failed with %d\n", ret);
+		goto fail_and_stop;
 	}
 
 	ret = hid_hw_open(hdev);
 	if (ret) {
-		hid_err(hdev, "hid_hw_open failed with %d\n", ret);
-		goto rec_close_hid;
+		hid_err(hdev, "hid hw open failed with %d\n", ret);
+		goto fail_and_close;
 	}
 
-	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, HWMON_NAME,
+	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, "nzxt_kraken2",
 							  priv, &kraken2_chip_info,
 							  NULL);
 	if (IS_ERR(priv->hwmon_dev)) {
-		hid_err(hdev, "failed to register hwmon device\n");
 		ret = PTR_ERR(priv->hwmon_dev);
-		goto rec_close_hid;
+		hid_err(hdev, "hwmon registration failed with %d\n", ret);
+		goto fail_and_close;
 	}
 
 	return 0;
 
-rec_close_hid:
+fail_and_close:
 	hid_hw_close(hdev);
-rec_stop_hid:
+fail_and_stop:
 	hid_hw_stop(hdev);
 	return ret;
 }
@@ -202,7 +198,7 @@ static const struct hid_device_id kraken2_table[] = {
 MODULE_DEVICE_TABLE(hid, kraken2_table);
 
 static struct hid_driver kraken2_driver = {
-	.name = DRIVER_NAME,
+	.name = "nzxt-kraken2",
 	.id_table = kraken2_table,
 	.probe = kraken2_probe,
 	.remove = kraken2_remove,
