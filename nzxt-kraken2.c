@@ -11,7 +11,7 @@
 #include <linux/module.h>
 #include <linux/spinlock.h>
 
-#define STATUS_REPORT		0x04
+#define STATUS_REPORT_ID	0x04
 #define STATUS_USEFUL_SIZE	8
 
 static const char *const kraken2_temp_label[] = {
@@ -19,7 +19,7 @@ static const char *const kraken2_temp_label[] = {
 };
 
 static const char *const kraken2_fan_label[] = {
-	"Fans",
+	"Fan",
 	"Pump",
 };
 
@@ -170,8 +170,11 @@ static int kraken2_raw_event(struct hid_device *hdev,
 	struct kraken2_priv_data *priv;
 	unsigned long flags;
 
-	if (size < STATUS_USEFUL_SIZE || report->id != STATUS_REPORT)
+	if (report->id != STATUS_REPORT_ID)
 		return 0;
+
+	if (size < STATUS_USEFUL_SIZE)
+		return -EIO;
 
 	priv = hid_get_drvdata(hdev);
 
@@ -218,7 +221,7 @@ static int kraken2_probe(struct hid_device *hdev,
 		goto fail_and_close;
 	}
 
-	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, "nzxt_kraken2",
+	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, "kraken2",
 							  priv, &kraken2_chip_info,
 							  NULL);
 	if (IS_ERR(priv->hwmon_dev)) {
@@ -239,7 +242,7 @@ fail_and_stop:
 static void kraken2_remove(struct hid_device *hdev)
 {
 	struct kraken2_priv_data *priv = hid_get_drvdata(hdev);
-	
+
 	hwmon_device_unregister(priv->hwmon_dev);
 
 	hid_hw_close(hdev);
@@ -247,7 +250,7 @@ static void kraken2_remove(struct hid_device *hdev)
 }
 
 static const struct hid_device_id kraken2_table[] = {
-	{ HID_USB_DEVICE(0x1e71, 0x170e) }, /* NZXT Kraken X42, X52, X62 or X72 */
+	{ HID_USB_DEVICE(0x1e71, 0x170e) }, /* NZXT Kraken X42/X52/X62/X72 */
 	{ }
 };
 
