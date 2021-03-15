@@ -35,7 +35,33 @@ static umode_t kraken2_is_visible(const void *data,
 				  enum hwmon_sensor_types type,
 				  u32 attr, int channel)
 {
-	return 0444;
+	switch (type) {
+	case hwmon_temp:
+		switch (attr) {
+		case hwmon_temp_label:
+		case hwmon_temp_input:
+			if (!channel)
+				return 0444;
+			break;
+		default:
+			break;
+		}
+		break;
+	case hwmon_fan:
+		switch (attr) {
+		case hwmon_fan_label:
+		case hwmon_fan_input:
+			if (channel >= 0 && channel < 2)
+				return 0444;
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+	return 0;
 }
 
 static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
@@ -43,47 +69,77 @@ static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
 {
 	struct kraken2_priv_data *priv = dev_get_drvdata(dev);
 	unsigned long flags;
-	int offset;
 
 	switch (type) {
 	case hwmon_temp:
-		/*
-		 * The fractional byte has been observed to be in the interval
-		 * [1,9], and certain steps are consistently skipped for some
-		 * integer parts.  For the lack of a better idea, assume that
-		 * the resolution is 0.1°C, and that missing steps are caused
-		 * by how the firmware converts the raw sensor data.
-		 */
-		spin_lock_irqsave(&priv->lock, flags);
-		*val = priv->status[1] * 1000 + priv->status[2] * 100;
-		spin_unlock_irqrestore(&priv->lock, flags);
+		switch (attr) {
+		case hwmon_temp_input:
+			if (channel)
+				return -EOPNOTSUPP;
+			/*
+			 * The fractional byte has been observed to be in the
+			 * interval [1,9], and certain steps are consistently
+			 * skipped for some integer parts.  For the lack of a
+			 * better idea, assume that the resolution is 0.1°C,
+			 * and that missing steps are caused by how the
+			 * firmware converts the raw sensor data.
+			 */
+			spin_lock_irqsave(&priv->lock, flags);
+			*val = priv->status[1] * 1000 + priv->status[2] * 100;
+			spin_unlock_irqrestore(&priv->lock, flags);
+			break;
+		default:
+			return -EOPNOTSUPP;
+		}
 		break;
 	case hwmon_fan:
-		offset = 3 + channel * 2;
-		spin_lock_irqsave(&priv->lock, flags);
-		*val = get_unaligned_be16(priv->status + 3 + channel * 2);
-		spin_unlock_irqrestore(&priv->lock, flags);
+		switch (attr) {
+		case hwmon_fan_input:
+			if (channel < 0 || channel >= 2)
+				return -EOPNOTSUPP;
+			spin_lock_irqsave(&priv->lock, flags);
+			*val = get_unaligned_be16(priv->status + 3 + channel * 2);
+			spin_unlock_irqrestore(&priv->lock, flags);
+			break;
+		default:
+			return -EOPNOTSUPP;
+		}
 		break;
 	default:
-		return -EINVAL;
+		return -EOPNOTSUPP;
 	}
 
 	return 0;
 }
 
-static int kraken2_read_string(struct device *dev,
-			       enum hwmon_sensor_types type, u32 attr,
-			       int channel, const char **str)
+static int kraken2_read_string(struct device *dev, enum hwmon_sensor_types type,
+			       u32 attr, int channel, const char **str)
 {
 	switch (type) {
 	case hwmon_temp:
-		*str = kraken2_temp_label[channel];
+		switch (attr) {
+		case hwmon_temp_label:
+			if (channel)
+				return -EOPNOTSUPP;
+			*str = kraken2_temp_label[channel];
+			break;
+		default:
+			return -EOPNOTSUPP;
+		}
 		break;
 	case hwmon_fan:
-		*str = kraken2_fan_label[channel];
+		switch (attr) {
+		case hwmon_fan_label:
+			if (channel < 0 || channel >= 2)
+				return -EOPNOTSUPP;
+			*str = kraken2_fan_label[channel];
+			break;
+		default:
+			return -EOPNOTSUPP;
+		}
 		break;
 	default:
-		return -EINVAL;
+		return -EOPNOTSUPP;
 	}
 	return 0;
 }
