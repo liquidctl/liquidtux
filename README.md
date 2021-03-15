@@ -18,8 +18,8 @@ ArchLinux users can try the [liquidtux-dkms-git<sup>AUR</sup>][liquidtux-dkms-gi
 After the package is installed, manually load the desired drivers.
 
 ```
-# modprobe nzxt-kraken2  # Kraken X42, X52, X62, X72
-# modprobe grdp3         # Smart Device (V1)
+$ sudo modprobe nzxt-kraken2  # NZXT Kraken X42, X52, X62, X72
+$ sudo modprobe grdp3         # NZXT Smart Device (V1)
 ```
 
 Those on other distros can experiment with directly using the [dkms.conf] in
@@ -35,8 +35,8 @@ built modules can then be loaded with `insmod`.
 
 ```
 $ make
-# insmod nzxt-kraken2.ko  # Kraken X42, X52, X62, X72
-# insmod grdp3.ko         # Smart Device (V1)
+$ sudo insmod nzxt-kraken2.ko  # NZXT Kraken X42, X52, X62, X72
+$ sudo insmod grdp3.ko         # NZXT Smart Device (V1)
 ```
 
 To unload them, use `rmmod` or `modprobe -r`.
@@ -45,14 +45,14 @@ If testing was successful the modules can be installed to the system with the
 `modules_install` target:
 
 ```
-# make modules_install
+$ sudo make modules_install
 ```
 
 ## Device support
 
 This is the current state of the out-of-tree drivers.
 
-| Device | State | device driver | hwmon driver |
+| Device | State | Driver name | HWMON name |
 | --- | --- | --- | --- |
 | NZXT Kraken X42, X52, X62, X72 | getting ready to upstream | `nzxt-kraken2` | `kraken2` |
 | NZXT Smart Device (V1) | hackish but using 24/7 | `grdp3` | `smart_device` |
