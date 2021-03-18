@@ -264,7 +264,22 @@ static struct hid_driver kraken2_driver = {
 	.raw_event = kraken2_raw_event,
 };
 
-module_hid_driver(kraken2_driver);
+static int __init kraken2_init(void)
+{
+	return hid_register_driver(&kraken2_driver);
+}
+
+static void __exit kraken2_exit(void)
+{
+	hid_unregister_driver(&kraken2_driver);
+}
+
+/*
+ * When compiled into the kernel, ensure that we are initialized after the hid
+ * bus.
+ */
+late_initcall(kraken2_init);
+module_exit(kraken2_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jonas Malaco <jonas@protocubo.io>");
