@@ -12,8 +12,8 @@ coretemp.
 #### Critical
 
 - [x] remove data races
-- [ ] check for other UB
-- [ ] check for suspend issues
+- [x] check for other UB (even ran with UBSAN)
+- [x] check for suspend issues (the hwmon device doesn't break if hid hasn't resumed in time)
 - [x] fix parsing of the cooling temperature (good enough for now)
 
 ### Medium
@@ -22,7 +22,7 @@ coretemp.
 
 #### Kernel/hwmon coding style
 
-- [ ] `sizeof(*data_value)` or `sizeof(struct data_type)`?
+- [x] `sizeof(*data_value)` or `sizeof(struct data_type)` (i think the former is less prone to errors)
 - [x] `ldata` or `priv`? (the latter is a common idiom in hwmon)
 - [x] `devm_hwmon_device_register_with_info` or
   `hwmon_device_register_with_info`? (use the latter is if `.remove` is needed)
@@ -49,13 +49,13 @@ control mode), plus a noise pressure level sensor.
 ## Naming modules and hwmon devices
 
 Current:
-- Kraken X.2 -> nzxt-kraken2
-- Smart Device (V1)/Grid+ V3 -> nzxt-sd1
+- Kraken X.2 -> nzxt-kraken2 (kraken2)
+- Smart Device (V1)/Grid+ V3 -> nzxt-smart-device (smartdevice/gridplus3)
 
 Future:
-- Kraken X.3 -> nzxt-krakenx3
-- Kraken Z.3 -> nzxt-krakenz3
-- Smart Device (V2)/RGB & Fan Controller -> nzxt-sd2
+- Kraken X.3 -> nzxt-kraken3 (krakenx3)
+- Kraken Z.3 -> nzxt-kraken3 (krakenz3)
+- Smart Device (V2)/RGB & Fan Controller -> nzxt-smart-device2 (smartdevice2/rgbfancontroller)
 
 
 ## ...
