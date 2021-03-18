@@ -170,11 +170,8 @@ static int kraken2_raw_event(struct hid_device *hdev,
 	struct kraken2_priv_data *priv;
 	unsigned long flags;
 
-	if (report->id != STATUS_REPORT_ID)
+	if (size < STATUS_USEFUL_SIZE || report->id != STATUS_REPORT_ID)
 		return 0;
-
-	if (size < STATUS_USEFUL_SIZE)
-		return -EIO;
 
 	priv = hid_get_drvdata(hdev);
 
