@@ -75,10 +75,12 @@ static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
 			/*
 			 * The fractional byte has been observed to be in the
 			 * interval [1,9], and certain steps are consistently
-			 * skipped for some integer parts.  For the lack of a
-			 * better idea, assume that the resolution is 0.1°C,
-			 * and that missing steps are caused by how the
-			 * firmware converts the raw sensor data.
+			 * skipped for some integer parts.
+			 *
+			 * Still, for the lack of a better idea, assume that
+			 * the resolution is 0.1°C, and that the missing steps
+			 * are caused by how the firmware processes the raw
+			 * sensor data.
 			 */
 			spin_lock_irqsave(&priv->lock, flags);
 			*val = priv->status[1] * 1000 + priv->status[2] * 100;
@@ -200,7 +202,6 @@ static int kraken2_probe(struct hid_device *hdev,
 
 	/*
 	 * Enable hidraw so existing user-space tools can continue to work.
-	 * provide additional functionality.
 	 */
 	ret = hid_hw_start(hdev, HID_CONNECT_HIDRAW);
 	if (ret) {
