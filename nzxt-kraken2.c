@@ -38,24 +38,20 @@ static umode_t kraken2_is_visible(const void *data,
 	switch (type) {
 	case hwmon_temp:
 		switch (attr) {
-		case hwmon_temp_label:
 		case hwmon_temp_input:
-			if (!channel)
+		case hwmon_temp_label:
+			if (channel == 0)
 				return 0444;
-			break;
-		default:
-			break;
+			return 0;
 		}
 		break;
 	case hwmon_fan:
 		switch (attr) {
-		case hwmon_fan_label:
 		case hwmon_fan_input:
+		case hwmon_fan_label:
 			if (channel >= 0 && channel < 2)
 				return 0444;
-			break;
-		default:
-			break;
+			return 0;
 		}
 		break;
 	default:
@@ -74,7 +70,7 @@ static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
 	case hwmon_temp:
 		switch (attr) {
 		case hwmon_temp_input:
-			if (channel)
+			if (channel != 0)
 				return -EOPNOTSUPP;
 			/*
 			 * The fractional byte has been observed to be in the
@@ -119,7 +115,7 @@ static int kraken2_read_string(struct device *dev, enum hwmon_sensor_types type,
 	case hwmon_temp:
 		switch (attr) {
 		case hwmon_temp_label:
-			if (channel)
+			if (channel != 0)
 				return -EOPNOTSUPP;
 			*str = kraken2_temp_label[channel];
 			break;
