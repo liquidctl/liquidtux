@@ -27,7 +27,7 @@ struct kraken2_priv_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
 
-	spinlock_t lock;
+	spinlock_t lock; /* protects the last received status */
 	u8 status[STATUS_USEFUL_SIZE];
 };
 
@@ -74,12 +74,12 @@ static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
 				return -EOPNOTSUPP;
 			/*
 			 * The fractional byte has been observed to be in the
-			 * interval [1,9], and certain steps are consistently
-			 * skipped for some integer parts.
+			 * interval [1,9], but some of these steps are also
+			 * consistently skipped for certain integer parts.
 			 *
-			 * Still, for the lack of a better idea, assume that
-			 * the resolution is 0.1°C, and that the missing steps
-			 * are caused by how the firmware processes the raw
+			 * For the lack of a better idea, assume that the
+			 * resolution is 0.1°C, and that the missing steps are
+			 * artifacts of how the firmware processes the raw
 			 * sensor data.
 			 */
 			spin_lock_irqsave(&priv->lock, flags);
@@ -269,8 +269,7 @@ static void __exit kraken2_exit(void)
 }
 
 /*
- * When compiled into the kernel, ensure that we are initialized after the hid
- * bus.
+ * When compiled into the kernel, initialize after the hid bus.
  */
 late_initcall(kraken2_init);
 module_exit(kraken2_exit);
