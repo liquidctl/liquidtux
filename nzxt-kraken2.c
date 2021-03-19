@@ -12,7 +12,6 @@
 #include <linux/spinlock.h>
 
 #define STATUS_REPORT_ID	0x04
-#define STATUS_USEFUL_SIZE	8
 
 static const char *const kraken2_temp_label[] = {
 	"Coolant",
@@ -26,85 +25,31 @@ static const char *const kraken2_fan_label[] = {
 struct kraken2_priv_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
-
-	spinlock_t lock; /* protects the last received status */
-	u8 status[STATUS_USEFUL_SIZE];
+	s32 temp_input[1];
+	u16 fan_input[2];
 };
 
 static umode_t kraken2_is_visible(const void *data,
 				  enum hwmon_sensor_types type,
 				  u32 attr, int channel)
 {
-	switch (type) {
-	case hwmon_temp:
-		switch (attr) {
-		case hwmon_temp_input:
-		case hwmon_temp_label:
-			if (channel == 0)
-				return 0444;
-			return 0;
-		}
-		break;
-	case hwmon_fan:
-		switch (attr) {
-		case hwmon_fan_input:
-		case hwmon_fan_label:
-			if (channel >= 0 && channel < 2)
-				return 0444;
-			return 0;
-		}
-		break;
-	default:
-		break;
-	}
-	return 0;
+	return 0444;
 }
 
 static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
 			u32 attr, int channel, long *val)
 {
 	struct kraken2_priv_data *priv = dev_get_drvdata(dev);
-	unsigned long flags;
 
 	switch (type) {
 	case hwmon_temp:
-		switch (attr) {
-		case hwmon_temp_input:
-			if (channel != 0)
-				return -EOPNOTSUPP;
-			/*
-			 * The fractional byte has been observed to be in the
-			 * interval [1,9], but some of these steps are also
-			 * consistently skipped for certain integer parts.
-			 *
-			 * For the lack of a better idea, assume that the
-			 * resolution is 0.1°C, and that the missing steps are
-			 * artifacts of how the firmware processes the raw
-			 * sensor data.
-			 */
-			spin_lock_irqsave(&priv->lock, flags);
-			*val = priv->status[1] * 1000 + priv->status[2] * 100;
-			spin_unlock_irqrestore(&priv->lock, flags);
-			break;
-		default:
-			return -EOPNOTSUPP;
-		}
+		*val = priv->temp_input[channel];
 		break;
 	case hwmon_fan:
-		switch (attr) {
-		case hwmon_fan_input:
-			if (channel < 0 || channel >= 2)
-				return -EOPNOTSUPP;
-			spin_lock_irqsave(&priv->lock, flags);
-			*val = get_unaligned_be16(priv->status + 3 + channel * 2);
-			spin_unlock_irqrestore(&priv->lock, flags);
-			break;
-		default:
-			return -EOPNOTSUPP;
-		}
+		*val = priv->fan_input[channel];
 		break;
 	default:
-		return -EOPNOTSUPP;
+		return -EOPNOTSUPP; /* unreachable */
 	}
 
 	return 0;
@@ -115,29 +60,13 @@ static int kraken2_read_string(struct device *dev, enum hwmon_sensor_types type,
 {
 	switch (type) {
 	case hwmon_temp:
-		switch (attr) {
-		case hwmon_temp_label:
-			if (channel != 0)
-				return -EOPNOTSUPP;
-			*str = kraken2_temp_label[channel];
-			break;
-		default:
-			return -EOPNOTSUPP;
-		}
+		*str = kraken2_temp_label[channel];
 		break;
 	case hwmon_fan:
-		switch (attr) {
-		case hwmon_fan_label:
-			if (channel < 0 || channel >= 2)
-				return -EOPNOTSUPP;
-			*str = kraken2_fan_label[channel];
-			break;
-		default:
-			return -EOPNOTSUPP;
-		}
+		*str = kraken2_fan_label[channel];
 		break;
 	default:
-		return -EOPNOTSUPP;
+		return -EOPNOTSUPP; /* unreachable */
 	}
 	return 0;
 }
@@ -166,16 +95,25 @@ static int kraken2_raw_event(struct hid_device *hdev,
 			     struct hid_report *report, u8 *data, int size)
 {
 	struct kraken2_priv_data *priv;
-	unsigned long flags;
 
-	if (size < STATUS_USEFUL_SIZE || report->id != STATUS_REPORT_ID)
+	if (size < 7 || report->id != STATUS_REPORT_ID)
 		return 0;
 
 	priv = hid_get_drvdata(hdev);
 
-	spin_lock_irqsave(&priv->lock, flags);
-	memcpy(priv->status, data, STATUS_USEFUL_SIZE);
-	spin_unlock_irqrestore(&priv->lock, flags);
+	/*
+	 * The fractional byte of the coolant temperature has been observed to
+	 * be in the interval [1,9], but some of these steps are also
+	 * consistently skipped for certain integer parts.
+	 *
+	 * For the lack of a better idea, assume that the resolution is 0.1°C,
+	 * and that the missing steps are artifacts of how the firmware
+	 * processes the raw sensor data.
+	 */
+	priv->temp_input[0] = data[1] * 1000 + data[2] * 100;
+
+	priv->fan_input[0] = get_unaligned_be16(data + 3);
+	priv->fan_input[1] = get_unaligned_be16(data + 5);
 
 	return 0;
 }
@@ -191,7 +129,6 @@ static int kraken2_probe(struct hid_device *hdev,
 		return -ENOMEM;
 
 	priv->hid_dev = hdev;
-	spin_lock_init(&priv->lock);
 	hid_set_drvdata(hdev, priv);
 
 	ret = hid_parse(hdev);
