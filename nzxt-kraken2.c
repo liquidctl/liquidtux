@@ -12,10 +12,12 @@
 #include <asm/unaligned.h>
 #include <linux/hid.h>
 #include <linux/hwmon.h>
+#include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
 
 #define STATUS_REPORT_ID	0x04
+#define STATUS_VALIDITY		2 /* seconds; equivalent to 4 missed updates */
 
 static const char *const kraken2_temp_label[] = {
 	"Coolant",
@@ -31,6 +33,7 @@ struct kraken2_priv_data {
 	struct device *hwmon_dev;
 	s32 temp_input[1];
 	u16 fan_input[2];
+	unsigned long updated; /* jiffies */
 };
 
 static umode_t kraken2_is_visible(const void *data,
@@ -44,6 +47,9 @@ static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
 			u32 attr, int channel, long *val)
 {
 	struct kraken2_priv_data *priv = dev_get_drvdata(dev);
+
+	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
+		return -ENODATA;
 
 	switch (type) {
 	case hwmon_temp:
@@ -119,6 +125,8 @@ static int kraken2_raw_event(struct hid_device *hdev,
 	priv->fan_input[0] = get_unaligned_be16(data + 3);
 	priv->fan_input[1] = get_unaligned_be16(data + 5);
 
+	priv->updated = jiffies;
+
 	return 0;
 }
 
@@ -134,6 +142,13 @@ static int kraken2_probe(struct hid_device *hdev,
 
 	priv->hid_dev = hdev;
 	hid_set_drvdata(hdev, priv);
+
+	/*
+	 * Initialize ->updated to STATUS_VALIDITY seconds in the past, making
+	 * the initial empty data invalid for kraken2_read without the need for
+	 * a special case there.
+	 */
+	priv->updated = jiffies - STATUS_VALIDITY * HZ;
 
 	ret = hid_parse(hdev);
 	if (ret) {
