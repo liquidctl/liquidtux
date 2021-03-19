@@ -2,7 +2,11 @@
 /*
  * nzxt-kraken2.c - hwmon driver for NZXT Kraken X42/X52/X62/X72 coolers
  *
- * Copyright 2019  Jonas Malaco <jonas@protocubo.io>
+ * The device asynchronously sends HID reports (with id 0x04) twice a second to
+ * communicate current fan speed, pump speed and coolant temperature.  The
+ * device does not respond to Get_Report requests for this status report.
+ *
+ * Copyright 2019-2021  Jonas Malaco <jonas@protocubo.io>
  */
 
 #include <asm/unaligned.h>
