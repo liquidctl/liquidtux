@@ -14,12 +14,13 @@ repository.
 
 ## Installing with DKMS
 
-ArchLinux users can try the [liquidtux-dkms-git<sup>AUR</sup>][liquidtux-dkms-git-aur] package.
-After the package is installed, manually load the desired drivers.
+ArchLinux users can try the
+[liquidtux-dkms-git<sup>AUR</sup>][liquidtux-dkms-git-aur]
+package.  After the package is installed, manually load the desired drivers.
 
 ```
-$ sudo modprobe nzxt-kraken2  # NZXT Kraken X42, X52, X62, X72
-$ sudo modprobe grdp3         # NZXT Smart Device (V1)
+$ sudo modprobe nzxt-kraken2            # NZXT Kraken X42/X52/X62/X72
+$ sudo modprobe nzxt-smartdevice        # NZXT Smart Device (V1)/Grid+ V3
 ```
 
 Those on other distros can experiment with directly using the [dkms.conf] in
@@ -27,16 +28,15 @@ that package.  It should work with minimal modifications.
 
 ## Manually building, inserting and installing
 
-The drivers should be built with the [kbuild
-system](https://github.com/torvalds/linux/blob/master/Documentation/kbuild/modules.txt).
+The drivers should be built with the [kbuild system].
 
 A simple Makefile is provided that simplifies this in normal scenarios.  The
 built modules can then be loaded with `insmod`.
 
 ```
 $ make
-$ sudo insmod nzxt-kraken2.ko  # NZXT Kraken X42, X52, X62, X72
-$ sudo insmod grdp3.ko         # NZXT Smart Device (V1)
+$ sudo insmod nzxt-kraken2.ko           # NZXT Kraken X42/X52/X62/X72
+$ sudo insmod nzxt-smartdevice.ko       # NZXT Smart Device (V1)/Grid+ V3
 ```
 
 To unload them, use `rmmod` or `modprobe -r`.
@@ -50,17 +50,20 @@ $ sudo make modules_install
 
 ## Device support
 
-This is the current state of the out-of-tree drivers.
+This is the current state of the drivers:
 
 | Device | State | Driver name | HWMON name |
 | --- | --- | --- | --- |
-| NZXT Kraken X42, X52, X62, X72 | getting ready to upstream | `nzxt-kraken2` | `kraken2` |
-| NZXT Smart Device (V1) | hackish but using 24/7 | `grdp3` | `smart_device` |
+| NZXT Kraken X42/X52/X62/X72 | patches: [[1]][p-kraken2-v2] | `nzxt-kraken2` | `kraken2` |
+| NZXT Smart Device (V1) | getting ready to upstream | `nzxt-smartdevice` | `smartdevice` |
+| NZXT Grid+ V3 | getting ready to upstream | `nzxt-smartdevice` | `smartdevice` |
 
 Once the drivers are mature they will be proposed to upstream.
 
-[liquidctl]: https://github.com/jonasmalacofilho/liquidctl
-[hwmon sysfs interface]: https://www.kernel.org/doc/Documentation/hwmon/sysfs-interface
-[lm-sensors]: https://github.com/lm-sensors/lm-sensors
-[liquidtux-dkms-git-aur]: https://aur.archlinux.org/packages/liquidtux-dkms-git/
 [dkms.conf]: https://aur.archlinux.org/cgit/aur.git/tree/dkms.conf?h=liquidtux-dkms-git
+[hwmon sysfs interface]: https://www.kernel.org/doc/Documentation/hwmon/sysfs-interface
+[kbuild system]: https://github.com/torvalds/linux/blob/master/Documentation/kbuild/modules.txt
+[liquidctl]: https://github.com/jonasmalacofilho/liquidctl
+[liquidtux-dkms-git-aur]: https://aur.archlinux.org/packages/liquidtux-dkms-git/
+[lm-sensors]: https://github.com/lm-sensors/lm-sensors
+[p-kraken2-v2]: https://patchwork.kernel.org/project/linux-hwmon/patch/20210319045544.416138-1-jonas@protocubo.io/
