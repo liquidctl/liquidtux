@@ -26,25 +26,29 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 
+#define VID_NZXT		0x1e71
 #define PID_GRIDPLUS3		0x1711
 #define PID_SMARTDEVICE		0x1714
-#define VID_NZXT		0x1e71
 
 #define STATUS_REPORT_ID	0x04
 #define STATUS_VALIDITY		3 /* seconds */
 
+#define MAX_CHANNELS		6
+
 struct smartdevice_priv_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
-	int channels;
-	u16 fan_input[6];
-	u32 curr_input[6];
-	u32 in_input[6];
-	u8 pwm_mode[6]; /* TODO replace with bit mask */
-	unsigned long updated; /* jiffies */
+
+	u16 fan_input[MAX_CHANNELS];
+	u16 curr_input[MAX_CHANNELS]; /* centiamperes */
+	u16 in_input[MAX_CHANNELS]; /* centivolts */
+	u8 pwm_mode[MAX_CHANNELS];
+	u8 channel_count;
 
 	struct mutex lock; /* protects the output buffer */
 	u8 out[8]; /* output buffer */
+
+	unsigned long updated; /* jiffies */
 };
 
 static umode_t smartdevice_is_visible(const void *data,
@@ -53,21 +57,20 @@ static umode_t smartdevice_is_visible(const void *data,
 {
 	const struct smartdevice_priv_data *priv = data;
 
-	if (channel >= priv->channels)
+	if (channel >= priv->channel_count)
 		return 0;
 
-	/* TODO should we hide unconnected fans */
+	/* TODO should we hide unconnected fans? */
 
 	switch (type) {
 	case hwmon_fan:
 	case hwmon_curr:
 	case hwmon_in:
 		return 0444;
-		return 0444;
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
-			return 0200; /* TODO check */
+			return 0200;
 		case hwmon_pwm_mode:
 			return 0444;
 		default:
@@ -91,10 +94,10 @@ static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
 		*val = priv->fan_input[channel];
 		break;
 	case hwmon_curr:
-		*val = priv->curr_input[channel];
+		*val = priv->curr_input[channel] * 10;
 		break;
 	case hwmon_in:
-		*val = priv->in_input[channel];
+		*val = priv->in_input[channel] * 10;
 		break;
 	case hwmon_pwm:
 		*val = priv->pwm_mode[channel];
@@ -112,12 +115,8 @@ static int smartdevice_write(struct device *dev, enum hwmon_sensor_types type,
 	int ret;
 	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
 
-	if (channel >= priv->channels)
-		return 0;
-
-	ret = mutex_lock_interruptible(&priv->lock);
-	if (ret)
-		return ret;
+	if (mutex_lock_interruptible(&priv->lock))
+		return -EINTR;
 
 	priv->out[0] = 0x02;
 	priv->out[1] = 0x4d;
@@ -174,37 +173,11 @@ static const struct hwmon_chip_info smartdevice_chip_info = {
 	.info = smartdevice_info,
 };
 
-static int smartdevice_raw_event(struct hid_device *hdev,
-				 struct hid_report *report, u8 *data, int size)
-{
-	struct smartdevice_priv_data *priv;
-	int channel;
-
-	if (size < 16 || report->id != STATUS_REPORT_ID)
-		return 0;
-
-	priv = hid_get_drvdata(hdev);
-
-	channel = data[15] >> 4;
-	if (channel > priv->channels)
-		return 0; /* TODO why not an error? */
-
-	/* TODO are data for initialized undetected fans still reported? */
-
-	priv->fan_input[channel] = get_unaligned_be16(data + 3);
-	priv->in_input[channel] = data[7] * 1000 + data[8] * 10;
-	priv->curr_input[channel] = data[9] * 1000 + data[10] * 10;
-	priv->pwm_mode[channel] = !(data[15] & 0x1);
-
-	priv->updated = jiffies;
-
-	return 0;
-}
-
 /* FIXME this probably also needs to be called when resuming from deep sleep states */
 static int smartdevice_req_init(struct hid_device *hdev, u8 *buf)
 {
 	int cmd, ret;
+
 	buf[0] = 0x01;
 
 	for (cmd = 0x5c; cmd < 0x5e; cmd++) {
@@ -217,6 +190,51 @@ static int smartdevice_req_init(struct hid_device *hdev, u8 *buf)
 	}
 
 	return 0;
+}
+
+static int smartdevice_raw_event(struct hid_device *hdev,
+				 struct hid_report *report, u8 *data, int size)
+{
+	struct smartdevice_priv_data *priv;
+	int channel;
+
+	if (size < 16 || report->id != STATUS_REPORT_ID)
+		return 0;
+
+	priv = hid_get_drvdata(hdev);
+
+	channel = data[15] >> 4;
+	if (channel > priv->channel_count)
+		return 0; /* TODO why not an error? */
+
+	/* TODO are data for initialized undetected fans still reported? */
+
+	/*
+	 * Keep current/voltage in centiamperes/volts to save some space.
+	 */
+
+	priv->fan_input[channel] = get_unaligned_be16(data + 3);
+	priv->curr_input[channel] = data[9] * 100 + data[10];
+	priv->in_input[channel] = data[7] * 100 + data[8];
+	priv->pwm_mode[channel] = !(data[15] & 0x1);
+
+	priv->updated = jiffies;
+
+	return 0;
+}
+
+static int smartdevice_reset_resume(struct hid_device *hdev)
+{
+	/*
+	 * TODO are we really in IRQ context or can we just use priv->out;
+	 * otherwise we need to allocate because buf must be DMA-safe
+	 */
+	u8 *buf = devm_kmalloc(&hdev->dev, 2, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	return smartdevice_req_init(hdev, buf);
 }
 
 static int smartdevice_probe(struct hid_device *hdev,
@@ -236,11 +254,11 @@ static int smartdevice_probe(struct hid_device *hdev,
 
 	switch (id->product) {
 	case PID_GRIDPLUS3:
-		priv->channels = 6;
+		priv->channel_count = 6;
 		hwmon_name = "gridplus3";
 		break;
 	case PID_SMARTDEVICE:
-		priv->channels = 3;
+		priv->channel_count = 3;
 		hwmon_name = "smartdevice";
 		break;
 	default:
@@ -275,7 +293,10 @@ static int smartdevice_probe(struct hid_device *hdev,
 		goto fail_and_close;
 	}
 
-	/* FIXME add comment ->lock doesn't need to be taken yet */
+	/*
+	 * Use priv->out without taking priv->lock because no one else has
+	 * access to it yet.
+	 */
 	ret = smartdevice_req_init(hdev, priv->out);
 	if (ret) {
 		hid_err(hdev, "request device init failed with %d\n", ret);
@@ -324,10 +345,13 @@ static struct hid_driver smartdevice_driver = {
 	.probe = smartdevice_probe,
 	.remove = smartdevice_remove,
 	.raw_event = smartdevice_raw_event,
+	.reset_resume = smartdevice_reset_resume,
 };
 
 static int __init smartdevice_init(void)
 {
+	printk(KERN_DEBUG "smartdevice_priv_data size: %ld\n",
+	       sizeof(struct smartdevice_priv_data) - sizeof(struct mutex) + 32);
 	return hid_register_driver(&smartdevice_driver);
 }
 
