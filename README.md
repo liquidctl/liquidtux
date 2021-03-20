@@ -58,7 +58,8 @@ This is the current state of the drivers:
 | NZXT Smart Device (V1) | getting ready to upstream | `nzxt-smartdevice` | `smartdevice` |
 | NZXT Grid+ V3 | getting ready to upstream | `nzxt-smartdevice` | `gridplus3` |
 
-Once the drivers are mature they will be proposed to upstream.
+As the drivers mature they will be proposed to, and hopefully reach, the
+mainline kernel.
 
 [dkms.conf]: https://aur.archlinux.org/cgit/aur.git/tree/dkms.conf?h=liquidtux-dkms-git
 [hwmon sysfs interface]: https://www.kernel.org/doc/Documentation/hwmon/sysfs-interface
