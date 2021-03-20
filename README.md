@@ -12,6 +12,22 @@ interface can access these devices' sensors.  For more information, read the
 documentation of the [hwmon sysfs interface] and check the [lm-sensors]
 repository.
 
+## Device support
+
+As the drivers mature, they will be proposed to, and hopefully reach, the
+mainline kernel.
+
+This is the current state of the drivers in regards to this process:
+
+| Device | State | Driver name | hwmon name |
+| --- | --- | --- | --- |
+| NZXT Kraken X42/X52/X62/X72 | patches: [[1]][p-kraken2-v2] | `nzxt-kraken2` | `kraken2` |
+| NZXT Smart Device (V1) | getting ready to submit | `nzxt-smartdevice` | `smartdevice` |
+| NZXT Grid+ V3 | getting ready to submit | `nzxt-smartdevice` | `gridplus3` |
+
+This repository contains the latest state of each driver, including features
+and bug fixes been worked on but no yet submitted upstream.
+
 ## Installing with DKMS
 
 ArchLinux users can try the
@@ -47,19 +63,6 @@ If testing was successful the modules can be installed to the system with the
 ```
 $ sudo make modules_install
 ```
-
-## Device support
-
-This is the current state of the drivers:
-
-| Device | State | Driver name | hwmon name |
-| --- | --- | --- | --- |
-| NZXT Kraken X42/X52/X62/X72 | patches: [[1]][p-kraken2-v2] | `nzxt-kraken2` | `kraken2` |
-| NZXT Smart Device (V1) | getting ready to upstream | `nzxt-smartdevice` | `smartdevice` |
-| NZXT Grid+ V3 | getting ready to upstream | `nzxt-smartdevice` | `gridplus3` |
-
-As the drivers mature they will be proposed to, and hopefully reach, the
-mainline kernel.
 
 [dkms.conf]: dkms.conf
 [hwmon sysfs interface]: https://www.kernel.org/doc/Documentation/hwmon/sysfs-interface
