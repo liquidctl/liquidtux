@@ -56,7 +56,7 @@ This is the current state of the drivers:
 | --- | --- | --- | --- |
 | NZXT Kraken X42/X52/X62/X72 | patches: [[1]][p-kraken2-v2] | `nzxt-kraken2` | `kraken2` |
 | NZXT Smart Device (V1) | getting ready to upstream | `nzxt-smartdevice` | `smartdevice` |
-| NZXT Grid+ V3 | getting ready to upstream | `nzxt-smartdevice` | `smartdevice` |
+| NZXT Grid+ V3 | getting ready to upstream | `nzxt-smartdevice` | `gridplus3` |
 
 Once the drivers are mature they will be proposed to upstream.
 

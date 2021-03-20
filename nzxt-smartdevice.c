@@ -223,6 +223,7 @@ static int smartdevice_probe(struct hid_device *hdev,
 			     const struct hid_device_id *id)
 {
 	struct smartdevice_priv_data *priv;
+	char *hwmon_name;
 	int ret;
 
 	priv = devm_kzalloc(&hdev->dev, sizeof(*priv), GFP_KERNEL);
@@ -234,11 +235,13 @@ static int smartdevice_probe(struct hid_device *hdev,
 	hid_set_drvdata(hdev, priv);
 
 	switch (id->product) {
-	case PID_SMARTDEVICE:
-		priv->channels = 3;
-		break;
 	case PID_GRIDPLUS3:
 		priv->channels = 6;
+		hwmon_name = "gridplus3";
+		break;
+	case PID_SMARTDEVICE:
+		priv->channels = 3;
+		hwmon_name = "smartdevice";
 		break;
 	default:
 		return -EINVAL; /* unreachable */
@@ -279,7 +282,7 @@ static int smartdevice_probe(struct hid_device *hdev,
 		goto fail_and_close;
 	}
 
-	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, "smartdevice",
+	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, hwmon_name,
 							  priv, &smartdevice_chip_info,
 							  NULL);
 	if (IS_ERR(priv->hwmon_dev)) {
