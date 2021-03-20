@@ -23,8 +23,8 @@ $ sudo modprobe nzxt-kraken2            # NZXT Kraken X42/X52/X62/X72
 $ sudo modprobe nzxt-smartdevice        # NZXT Smart Device (V1)/Grid+ V3
 ```
 
-Those on other distros can experiment with directly using the [dkms.conf] in
-that package.  It should work with minimal modifications.
+Those on other distros can experiment with directly using the provided
+[dkms.conf].  It should work with minimal modifications.
 
 ## Manually building, inserting and installing
 
@@ -61,7 +61,7 @@ This is the current state of the drivers:
 As the drivers mature they will be proposed to, and hopefully reach, the
 mainline kernel.
 
-[dkms.conf]: https://aur.archlinux.org/cgit/aur.git/tree/dkms.conf?h=liquidtux-dkms-git
+[dkms.conf]: dkms.conf
 [hwmon sysfs interface]: https://www.kernel.org/doc/Documentation/hwmon/sysfs-interface
 [kbuild system]: https://github.com/torvalds/linux/blob/master/Documentation/kbuild/modules.txt
 [liquidctl]: https://github.com/jonasmalacofilho/liquidctl
