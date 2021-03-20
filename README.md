@@ -2,9 +2,9 @@
 
 _Linux kernel hwmon drivers for AIO liquid coolers and other devices_
 
-The goal of this project is to offer hwmon drivers for closed-loop liquid
-coolers and other devices supported by [liquidctl], making their sensor data
-available in `/sys/class/hwmon/hwmon*`.
+The goal of this project is to offer hardware monitoring drivers for
+closed-loop liquid coolers and other devices supported by [liquidctl], making
+their sensor data available in `/sys/class/hwmon/hwmon*`.
 
 By using the standard hwmon sysfs interface, `sensors`, tools using
 `libsensors`, as well as programs that read directly from the raw sysfs
@@ -52,7 +52,7 @@ $ sudo make modules_install
 
 This is the current state of the drivers:
 
-| Device | State | Driver name | HWMON name |
+| Device | State | Driver name | hwmon name |
 | --- | --- | --- | --- |
 | NZXT Kraken X42/X52/X62/X72 | patches: [[1]][p-kraken2-v2] | `nzxt-kraken2` | `kraken2` |
 | NZXT Smart Device (V1) | getting ready to upstream | `nzxt-smartdevice` | `smartdevice` |
