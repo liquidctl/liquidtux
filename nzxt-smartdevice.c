@@ -16,6 +16,13 @@
  * Fan speeds can be controlled by sending HID reports with id 0x02, but duty
  * cycles cannot be read back from the device.
  *
+ * TODO try to set the polling rate
+ * TODO try Get_Report
+ * TODO if both of them are available, try JIT reading
+ * TODO try to dynamically change the polling rate depending on whether hidraw
+ *      is in use
+ * TODO try to only open the device when necessary
+ *
  * Copyright 2019-2021  Jonas Malaco <jonas@protocubo.io>
  */
 
@@ -86,6 +93,8 @@ static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
 {
 	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
 
+	/* TODO should we validate each channel individually? */
+
 	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
 		return -ENODATA;
 
@@ -112,8 +121,8 @@ static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
 static int smartdevice_write(struct device *dev, enum hwmon_sensor_types type,
 			     u32 attr, int channel, long val)
 {
-	int ret;
 	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
+	int ret;
 
 	if (mutex_lock_interruptible(&priv->lock))
 		return -EINTR;
@@ -173,7 +182,6 @@ static const struct hwmon_chip_info smartdevice_chip_info = {
 	.info = smartdevice_info,
 };
 
-/* FIXME this probably also needs to be called when resuming from deep sleep states */
 static int smartdevice_req_init(struct hid_device *hdev, u8 *buf)
 {
 	int cmd, ret;
@@ -205,7 +213,7 @@ static int smartdevice_raw_event(struct hid_device *hdev,
 
 	channel = data[15] >> 4;
 	if (channel > priv->channel_count)
-		return 0; /* TODO why not an error? */
+		return 0;
 
 	/* TODO are data for initialized undetected fans still reported? */
 
@@ -359,8 +367,8 @@ static struct hid_driver smartdevice_driver = {
 
 static int __init smartdevice_init(void)
 {
-	printk(KERN_DEBUG "smartdevice_priv_data size: %ld\n",
-	       sizeof(struct smartdevice_priv_data) - sizeof(struct mutex) + 32);
+	pr_debug("smartdevice_priv_data size: %ld\n",
+		 sizeof(struct smartdevice_priv_data));
 	return hid_register_driver(&smartdevice_driver);
 }
 
