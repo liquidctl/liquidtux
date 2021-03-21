@@ -30,6 +30,7 @@
 #include <linux/hid.h>
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
+#include <linux/minmax.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 
@@ -131,7 +132,7 @@ static int smartdevice_write(struct device *dev, enum hwmon_sensor_types type,
 	priv->out[1] = 0x4d;
 	priv->out[2] = channel;
 	priv->out[3] = 0x00;
-	priv->out[4] = val * 100 / 255;
+	priv->out[4] = clamp_val(val, 0, 255) * 100 / 255;
 
 	ret = hid_hw_output_report(priv->hid_dev, priv->out, 5);
 	mutex_unlock(&priv->lock);
