@@ -225,16 +225,22 @@ static int smartdevice_raw_event(struct hid_device *hdev,
 
 static int smartdevice_reset_resume(struct hid_device *hdev)
 {
-	/*
-	 * TODO are we really in IRQ context or can we just use priv->out;
-	 * otherwise we need to allocate because buf must be DMA-safe
-	 */
-	u8 *buf = devm_kmalloc(&hdev->dev, 2, GFP_KERNEL);
+	struct smartdevice_priv_data *priv = hid_get_drvdata(hdev);
+	int ret;
 
-	if (!buf)
-		return -ENOMEM;
+	mutex_lock(&priv->lock);
+	ret = smartdevice_req_init(hdev, priv->out);
+	mutex_unlock(&priv->lock);
 
-	return smartdevice_req_init(hdev, buf);
+	hid_info(hdev, "(reset_resume) req_init returned %d\n", ret);
+
+	return ret;
+}
+
+static int smartdevice_resume(struct hid_device *hdev)
+{
+	hid_info(hdev, "(resume) forwarding call to reset_resume for testing purposes");
+	return smartdevice_reset_resume(hdev);
 }
 
 static int smartdevice_probe(struct hid_device *hdev,
@@ -329,6 +335,8 @@ static void smartdevice_remove(struct hid_device *hdev)
 
 	hid_hw_close(hdev);
 	hid_hw_stop(hdev);
+
+	mutex_destroy(&priv->lock);
 }
 
 static const struct hid_device_id smartdevice_table[] = {
@@ -345,6 +353,7 @@ static struct hid_driver smartdevice_driver = {
 	.probe = smartdevice_probe,
 	.remove = smartdevice_remove,
 	.raw_event = smartdevice_raw_event,
+	.resume = smartdevice_resume,
 	.reset_resume = smartdevice_reset_resume,
 };
 
