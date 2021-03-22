@@ -2,26 +2,37 @@
 /*
  * nzxt-smartdevice.c - hwmon driver for NZXT Smart Device (V1) and Grid+ V3
  *
- * The device asynchronously sends HID reports (with id 0x???) five times a
- * second to communicate current fan speed, current, voltage and control mode.
- * The device does not respond to Get_Report requests for this status report.
- * TODO check
+ * The device asynchronously sends HID reports five times a second to
+ * communicate current fan speed, current, voltage and control mode.  It does
+ * not respond to Get_Report or honor Set_Idle requests for this status report.
  *
- * During probe, the device is requested to run its initialization routine,
- * where the connected fans and their appropriate control modes are detected.
- * A channel's control mode does not change after the initialization routine
- * finishes and the fan type has been recognized.
- * TODO can we detect uninitialized devices?
+ * Fan speeds can be controlled though output HID reports, but duty cycles
+ * cannot be read back from the device.
  *
- * Fan speeds can be controlled by sending HID reports with id 0x02, but duty
- * cycles cannot be read back from the device.
+ * A special initialization routine causes the device to detect the fan
+ * channels in use and their appropriate control mode (DC or PWM).  The
+ * initialization routine, once requested, is executed asynchronously by the
+ * device.
  *
- * TODO try to set the polling rate
- * TODO try Get_Report
- * TODO if both of them are available, try JIT reading
- * TODO try to dynamically change the polling rate depending on whether hidraw
- *      is in use
- * TODO try to only open the device when necessary
+ * Before initialization:
+ * - device does not send status reports;
+*  - all channels set to a default of 40% PWM.
+*
+ * After initialization:
+ * - device sends status reports;
+ * - for channels in use, the control mode detected and PWM changes are
+ *   honored;
+ * - for channels detected as not in use, fan speeds, current and voltage are
+ *   still measured, but control is disabled and PWM changes are ignored.
+ *
+ * Control mode and PWM settings only persist as long as the USB device is
+ * connected and powered on.  The Smart Device has three fan channels, while
+ * the Grid+ V3 has six.
+ *
+ * TODO should we validate each channel individually?
+ * TODO optimize space
+ * TODO use bitops
+ * TODO report IDs are indeed used?
  *
  * Copyright 2019-2021  Jonas Malaco <jonas@protocubo.io>
  */
@@ -38,10 +49,23 @@
 #define PID_GRIDPLUS3		0x1711
 #define PID_SMARTDEVICE		0x1714
 
-#define STATUS_REPORT_ID	0x04
+#define MAX_CHANNELS		6
+
+#define REPORT_REQ_INIT 	0x01
+#define REQ_INIT_DETECT		0x5c
+#define REQ_INIT_OPEN		0x5d
+
+#define REPORT_STATUS		0x04
 #define STATUS_VALIDITY		3 /* seconds */
 
-#define MAX_CHANNELS		6
+#define REPORT_CONFIG		0x02
+#define CONFIG_FAN_PWM		0x4d
+
+#include <linux/moduleparam.h>
+/* TODO remove (probably) */
+static bool do_not_init = false;
+module_param(do_not_init, bool, 0);
+MODULE_PARM_DESC(do_not_init, "Do not request device initialization");
 
 struct smartdevice_priv_data {
 	struct hid_device *hid_dev;
@@ -50,7 +74,7 @@ struct smartdevice_priv_data {
 	u16 fan_input[MAX_CHANNELS];
 	u16 curr_input[MAX_CHANNELS]; /* centiamperes */
 	u16 in_input[MAX_CHANNELS]; /* centivolts */
-	u8 pwm_mode[MAX_CHANNELS];
+	u8 channel_mode[MAX_CHANNELS];
 	u8 channel_count;
 
 	struct mutex lock; /* protects the output buffer */
@@ -68,8 +92,6 @@ static umode_t smartdevice_is_visible(const void *data,
 	if (channel >= priv->channel_count)
 		return 0;
 
-	/* TODO should we hide unconnected fans? */
-
 	switch (type) {
 	case hwmon_fan:
 	case hwmon_curr:
@@ -78,7 +100,8 @@ static umode_t smartdevice_is_visible(const void *data,
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
-			return 0200;
+		case hwmon_pwm_enable:
+			return 0644;
 		case hwmon_pwm_mode:
 			return 0444;
 		default:
@@ -94,7 +117,6 @@ static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
 {
 	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
 
-	/* TODO should we validate each channel individually? */
 
 	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
 		return -ENODATA;
@@ -110,7 +132,25 @@ static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
 		*val = priv->in_input[channel] * 10;
 		break;
 	case hwmon_pwm:
-		*val = priv->pwm_mode[channel];
+		switch (attr) {
+		case hwmon_pwm_input:
+			/* The device does not support reading the control
+			 * mode, but user-space really depends on this being
+			 * RW.  Fake the read and return a fictitious value.
+			 */
+			*val = 255;
+			break;
+		case hwmon_pwm_enable:
+			*val = priv->channel_mode[channel] != 0;
+			break;
+		case hwmon_pwm_mode:
+			if (!priv->channel_mode[channel])
+				return -EOPNOTSUPP;
+			*val = priv->channel_mode[channel] >> 1;
+			break;
+		default:
+			return -EOPNOTSUPP; /* unreachable */
+		}
 		break;
 	default:
 		return -EOPNOTSUPP; /* unreachable */
@@ -125,11 +165,27 @@ static int smartdevice_write(struct device *dev, enum hwmon_sensor_types type,
 	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
 	int ret;
 
+	/*
+	 * The device does not support changing the control method, but
+	 * user-space really depends on pwm[1-*]_enable being RW.  Fake the
+	 * write and behave as if the device had immediately reverted the
+	 * change.
+	 */
+	if (attr == hwmon_pwm_enable)
+		return 0;
+
+	/*
+	 * The device does not honor changes to the duty cycle of a fan channel
+	 * it thinks is unconnected.
+	 */
+	if (!(priv->channel_mode[channel] & 0x3))
+		return -EOPNOTSUPP;
+
 	if (mutex_lock_interruptible(&priv->lock))
 		return -EINTR;
 
-	priv->out[0] = 0x02;
-	priv->out[1] = 0x4d;
+	priv->out[0] = REPORT_CONFIG;
+	priv->out[1] = CONFIG_FAN_PWM;
 	priv->out[2] = channel;
 	priv->out[3] = 0x00;
 	priv->out[4] = clamp_val(val, 0, 255) * 100 / 255;
@@ -169,12 +225,12 @@ static const struct hwmon_channel_info *smartdevice_info[] = {
 			   HWMON_I_INPUT,
 			   HWMON_I_INPUT),
 	HWMON_CHANNEL_INFO(pwm,
-			   HWMON_PWM_INPUT | HWMON_PWM_MODE,
-			   HWMON_PWM_INPUT | HWMON_PWM_MODE,
-			   HWMON_PWM_INPUT | HWMON_PWM_MODE,
-			   HWMON_PWM_INPUT | HWMON_PWM_MODE,
-			   HWMON_PWM_INPUT | HWMON_PWM_MODE,
-			   HWMON_PWM_INPUT | HWMON_PWM_MODE),
+			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE,
+			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE,
+			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE,
+			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE,
+			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE,
+			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE),
 	NULL
 };
 
@@ -183,14 +239,47 @@ static const struct hwmon_chip_info smartdevice_chip_info = {
 	.info = smartdevice_info,
 };
 
+static int smartdevice_raw_event(struct hid_device *hdev,
+				 struct hid_report *report, u8 *data, int size)
+{
+	struct smartdevice_priv_data *priv;
+	int channel;
+
+	if (size < 16 || report->id != REPORT_STATUS)
+		return 0;
+
+	priv = hid_get_drvdata(hdev);
+
+	channel = data[15] >> 4;
+	if (channel > priv->channel_count)
+		return 0;
+
+	/*
+	 * Keep current/voltage in centiamperes/volts to save some space.
+	 */
+
+	priv->fan_input[channel] = get_unaligned_be16(data + 3);
+	priv->curr_input[channel] = data[9] * 100 + data[10];
+	priv->in_input[channel] = data[7] * 100 + data[8];
+	priv->channel_mode[channel] = data[15] & 0x3;
+
+	priv->updated = jiffies;
+
+	return 0;
+}
+
 static int smartdevice_req_init(struct hid_device *hdev, u8 *buf)
 {
-	int cmd, ret;
+	u8 cmds[2] = {REQ_INIT_DETECT, REQ_INIT_OPEN};
+	int i, ret;
 
-	buf[0] = 0x01;
+	if (do_not_init)
+		return 0;
 
-	for (cmd = 0x5c; cmd < 0x5e; cmd++) {
-		buf[1] = cmd;
+	buf[0] = REPORT_REQ_INIT;
+
+	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
+		buf[1] = cmds[i];
 		ret = hid_hw_output_report(hdev, buf, 2);
 		if (ret < 0)
 			return ret;
@@ -201,56 +290,33 @@ static int smartdevice_req_init(struct hid_device *hdev, u8 *buf)
 	return 0;
 }
 
-static int smartdevice_raw_event(struct hid_device *hdev,
-				 struct hid_report *report, u8 *data, int size)
-{
-	struct smartdevice_priv_data *priv;
-	int channel;
-
-	if (size < 16 || report->id != STATUS_REPORT_ID)
-		return 0;
-
-	priv = hid_get_drvdata(hdev);
-
-	channel = data[15] >> 4;
-	if (channel > priv->channel_count)
-		return 0;
-
-	/* TODO are data for initialized undetected fans still reported? */
-
-	/*
-	 * Keep current/voltage in centiamperes/volts to save some space.
-	 */
-
-	priv->fan_input[channel] = get_unaligned_be16(data + 3);
-	priv->curr_input[channel] = data[9] * 100 + data[10];
-	priv->in_input[channel] = data[7] * 100 + data[8];
-	priv->pwm_mode[channel] = !(data[15] & 0x1);
-
-	priv->updated = jiffies;
-
-	return 0;
-}
-
+#ifdef CONFIG_PM
 static int smartdevice_reset_resume(struct hid_device *hdev)
 {
 	struct smartdevice_priv_data *priv = hid_get_drvdata(hdev);
 	int ret;
 
+	/* TODO remove */
+	hid_info(hdev, "(reset_resume) requesting new initialization");
+
 	mutex_lock(&priv->lock);
 	ret = smartdevice_req_init(hdev, priv->out);
 	mutex_unlock(&priv->lock);
 
-	hid_info(hdev, "(reset_resume) req_init returned %d\n", ret);
+	if (ret) {
+		hid_err(hdev, "req init (reset_resume) failed with %d\n", ret);
+	}
 
 	return ret;
 }
 
+/* TODO remove */
 static int smartdevice_resume(struct hid_device *hdev)
 {
 	hid_info(hdev, "(resume) forwarding call to reset_resume for testing purposes");
 	return smartdevice_reset_resume(hdev);
 }
+#endif
 
 static int smartdevice_probe(struct hid_device *hdev,
 			     const struct hid_device_id *id)
@@ -314,7 +380,7 @@ static int smartdevice_probe(struct hid_device *hdev,
 	 */
 	ret = smartdevice_req_init(hdev, priv->out);
 	if (ret) {
-		hid_err(hdev, "request device init failed with %d\n", ret);
+		hid_err(hdev, "req init failed with %d\n", ret);
 		goto fail_and_close;
 	}
 
@@ -362,14 +428,14 @@ static struct hid_driver smartdevice_driver = {
 	.probe = smartdevice_probe,
 	.remove = smartdevice_remove,
 	.raw_event = smartdevice_raw_event,
-	.resume = smartdevice_resume,
+#ifdef CONFIG_PM
 	.reset_resume = smartdevice_reset_resume,
+	.resume = smartdevice_resume, /* TODO remove */
+#endif
 };
 
 static int __init smartdevice_init(void)
 {
-	pr_debug("smartdevice_priv_data size: %ld\n",
-		 sizeof(struct smartdevice_priv_data));
 	return hid_register_driver(&smartdevice_driver);
 }
 
