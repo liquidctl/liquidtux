@@ -28,6 +28,9 @@ This is the current state of the drivers in regards to this process:
 This repository contains the latest state of each driver, including features
 and bug fixes been worked on but no yet submitted upstream.
 
+_Additionally, other hwmon drivers already exist in the mainline kernel for
+devices that liquidctl supports: [`corsair-cpro`], [`corsair-psu`]._
+
 ## Installing with DKMS
 
 ArchLinux users can try the
@@ -64,6 +67,8 @@ If testing was successful the modules can be installed to the system with the
 $ sudo make modules_install
 ```
 
+[`corsair-cpro`]: https://www.kernel.org/doc/html/latest/hwmon/corsair-cpro.html
+[`corsair-psu`]: https://www.kernel.org/doc/html/latest/hwmon/corsair-psu.html
 [dkms.conf]: dkms.conf
 [hwmon sysfs interface]: https://www.kernel.org/doc/Documentation/hwmon/sysfs-interface
 [kbuild system]: https://github.com/torvalds/linux/blob/master/Documentation/kbuild/modules.txt
