@@ -14,7 +14,6 @@
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
 #include <linux/module.h>
-#include <linux/spinlock.h>
 
 #define STATUS_REPORT_ID	0x04
 #define STATUS_VALIDITY		2 /* seconds; equivalent to 4 missed updates */
