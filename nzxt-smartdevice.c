@@ -10,28 +10,31 @@
  * cannot be read back from the device.
  *
  * A special initialization routine causes the device to detect the fan
- * channels in use and their appropriate control mode (DC or PWM).  The
+ * status in use and their appropriate control mode (DC or PWM).  The
  * initialization routine, once requested, is executed asynchronously by the
  * device.
  *
  * Before initialization:
  * - device does not send status reports;
-*  - all channels set to a default of 40% PWM.
+*  - all status set to a default of 40% PWM.
 *
  * After initialization:
  * - device sends status reports;
- * - for channels in use, the control mode detected and PWM changes are
+ * - for status in use, the control mode detected and PWM changes are
  *   honored;
- * - for channels detected as not in use, fan speeds, current and voltage are
+ * - for status detected as not in use, fan speeds, current and voltage are
  *   still measured, but control is disabled and PWM changes are ignored.
  *
  * Control mode and PWM settings only persist as long as the USB device is
- * connected and powered on.  The Smart Device has three fan channels, while
+ * connected and powered on.  The Smart Device has three fan status, while
  * the Grid+ V3 has six.
  *
  * TODO should we validate each channel individually?
+ * TODO store pwm for later reads (it's better than fictitious values)
  * TODO optimize space
+ * TODO initialize pwm to 40%
  * TODO use bitops
+ * TODO are barriers necessary?
  * TODO report IDs are indeed used?
  *
  * Copyright 2019-2021  Jonas Malaco <jonas@protocubo.io>
@@ -61,26 +64,33 @@
 #define REPORT_CONFIG		0x02
 #define CONFIG_FAN_PWM		0x4d
 
+/* FIXME remove (probably) */
 #include <linux/moduleparam.h>
-/* TODO remove (probably) */
 static bool do_not_init = false;
 module_param(do_not_init, bool, 0);
 MODULE_PARM_DESC(do_not_init, "Do not request device initialization");
+
+/*
+ * Store current/voltage in centiamperes/centivolts to save some space.
+ */
+struct smartdevice_status_data {
+	u16 rpms;
+	u16 centiamps;
+	u16 centivolts;
+	u8 pwm; /* fake, simply the last set value */
+	u8 device_mode;
+	unsigned long updated; /* jiffies */
+};
 
 struct smartdevice_priv_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
 
-	u16 fan_input[MAX_CHANNELS];
-	u16 curr_input[MAX_CHANNELS]; /* centiamperes */
-	u16 in_input[MAX_CHANNELS]; /* centivolts */
-	u8 channel_mode[MAX_CHANNELS];
+	struct smartdevice_status_data status[MAX_CHANNELS];
 	u8 channel_count;
 
-	struct mutex lock; /* protects the output buffer */
+	struct mutex lock; /* protects out and writes to status[*].pwm */
 	u8 out[8]; /* output buffer */
-
-	unsigned long updated; /* jiffies */
 };
 
 static umode_t smartdevice_is_visible(const void *data,
@@ -117,36 +127,35 @@ static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
 {
 	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
 
-
-	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
+	if (time_after(jiffies, priv->status[channel].updated + STATUS_VALIDITY * HZ)) /* FIXME */
 		return -ENODATA;
 
 	switch (type) {
 	case hwmon_fan:
-		*val = priv->fan_input[channel];
+		*val = priv->status[channel].rpms;
 		break;
 	case hwmon_curr:
-		*val = priv->curr_input[channel] * 10;
+		*val = priv->status[channel].centiamps * 10;
 		break;
 	case hwmon_in:
-		*val = priv->in_input[channel] * 10;
+		*val = priv->status[channel].centivolts * 10;
 		break;
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
 			/* The device does not support reading the control
 			 * mode, but user-space really depends on this being
-			 * RW.  Fake the read and return a fictitious value.
+			 * RW.  Fake the read and return the last value set.
 			 */
-			*val = 255;
+			*val = priv->status[channel].pwm;
 			break;
 		case hwmon_pwm_enable:
-			*val = priv->channel_mode[channel] != 0;
+			*val = priv->status[channel].device_mode != 0;
 			break;
 		case hwmon_pwm_mode:
-			if (!priv->channel_mode[channel])
+			if (!priv->status[channel].device_mode)
 				return -EOPNOTSUPP;
-			*val = priv->channel_mode[channel] >> 1;
+			*val = priv->status[channel].device_mode >> 1;
 			break;
 		default:
 			return -EOPNOTSUPP; /* unreachable */
@@ -167,9 +176,9 @@ static int smartdevice_write(struct device *dev, enum hwmon_sensor_types type,
 
 	/*
 	 * The device does not support changing the control method, but
-	 * user-space really depends on pwm[1-*]_enable being RW.  Fake the
-	 * write and behave as if the device had immediately reverted the
-	 * change.
+	 * user-space really depends on the pwm[*]_enable attribute being RW.
+	 * Fake the write and behave as if the device had immediately reverted
+	 * the change.
 	 */
 	if (attr == hwmon_pwm_enable)
 		return 0;
@@ -178,7 +187,7 @@ static int smartdevice_write(struct device *dev, enum hwmon_sensor_types type,
 	 * The device does not honor changes to the duty cycle of a fan channel
 	 * it thinks is unconnected.
 	 */
-	if (!(priv->channel_mode[channel] & 0x3))
+	if (!(priv->status[channel].device_mode & 0x3))
 		return -EOPNOTSUPP;
 
 	if (mutex_lock_interruptible(&priv->lock))
@@ -191,9 +200,18 @@ static int smartdevice_write(struct device *dev, enum hwmon_sensor_types type,
 	priv->out[4] = clamp_val(val, 0, 255) * 100 / 255;
 
 	ret = hid_hw_output_report(priv->hid_dev, priv->out, 5);
+
+	if (ret == 5)
+		priv->status[channel].pwm = priv->out[4];
+
 	mutex_unlock(&priv->lock);
 
-	return ret == 5 ? 0 : ret;
+	if (ret < 0)
+		return ret;
+	if (ret != 5)
+		return -EPIPE; /* FIXME */
+
+	return 0;
 }
 
 static const struct hwmon_ops smartdevice_hwmon_ops = {
@@ -254,16 +272,13 @@ static int smartdevice_raw_event(struct hid_device *hdev,
 	if (channel > priv->channel_count)
 		return 0;
 
-	/*
-	 * Keep current/voltage in centiamperes/volts to save some space.
-	 */
-
-	priv->fan_input[channel] = get_unaligned_be16(data + 3);
-	priv->curr_input[channel] = data[9] * 100 + data[10];
-	priv->in_input[channel] = data[7] * 100 + data[8];
-	priv->channel_mode[channel] = data[15] & 0x3;
-
-	priv->updated = jiffies;
+	/* TODO are all of these stores atomic? */
+	/* TODO are all corresponding reads (in other functions) atomic? */
+	priv->status[channel].rpms = get_unaligned_be16(data + 3);
+	priv->status[channel].centiamps = data[9] * 100 + data[10];
+	priv->status[channel].centivolts = data[7] * 100 + data[8];
+	priv->status[channel].device_mode = data[15] & 0x3;
+	priv->status[channel].updated = jiffies;
 
 	return 0;
 }
@@ -284,7 +299,7 @@ static int smartdevice_req_init(struct hid_device *hdev, u8 *buf)
 		if (ret < 0)
 			return ret;
 		if (ret != 2)
-			return -EPIPE;
+			return -EPIPE; /* FIXME */
 	}
 
 	return 0;
@@ -296,7 +311,7 @@ static int smartdevice_reset_resume(struct hid_device *hdev)
 	struct smartdevice_priv_data *priv = hid_get_drvdata(hdev);
 	int ret;
 
-	/* TODO remove */
+	/* FIXME remove */
 	hid_info(hdev, "(reset_resume) requesting new initialization");
 
 	mutex_lock(&priv->lock);
@@ -310,7 +325,7 @@ static int smartdevice_reset_resume(struct hid_device *hdev)
 	return ret;
 }
 
-/* TODO remove */
+/* FIXME remove */
 static int smartdevice_resume(struct hid_device *hdev)
 {
 	hid_info(hdev, "(resume) forwarding call to reset_resume for testing purposes");
@@ -323,7 +338,7 @@ static int smartdevice_probe(struct hid_device *hdev,
 {
 	struct smartdevice_priv_data *priv;
 	char *hwmon_name;
-	int ret;
+	int i, ret;
 
 	priv = devm_kzalloc(&hdev->dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
@@ -351,7 +366,10 @@ static int smartdevice_probe(struct hid_device *hdev,
 	 * the initial empty data invalid for kraken2_read without the need for
 	 * a special case there.
 	 */
-	priv->updated = jiffies - STATUS_VALIDITY * HZ;
+	for (i = 0; i < priv->channel_count; i++) {
+		/* TODO set pwm to 40% */
+		priv->status[i].updated = jiffies - STATUS_VALIDITY * HZ;
+	}
 
 	ret = hid_parse(hdev);
 	if (ret) {
@@ -430,12 +448,17 @@ static struct hid_driver smartdevice_driver = {
 	.raw_event = smartdevice_raw_event,
 #ifdef CONFIG_PM
 	.reset_resume = smartdevice_reset_resume,
-	.resume = smartdevice_resume, /* TODO remove */
+	.resume = smartdevice_resume, /* FIXME remove */
 #endif
 };
 
 static int __init smartdevice_init(void)
 {
+	/* FIXME remove */
+	printk(KERN_DEBUG "smartdevice_priv_data takes %ld bytes\n",
+	       sizeof(struct smartdevice_priv_data) - sizeof(struct mutex) + 32);
+	printk(KERN_DEBUG "smartdevice_status_data takes %ld bytes\n",
+	       sizeof(struct smartdevice_status_data));
 	return hid_register_driver(&smartdevice_driver);
 }
 
