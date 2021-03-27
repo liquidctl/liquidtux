@@ -50,6 +50,8 @@ static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
 	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
 		return -ENODATA;
 
+	smp_rmb(); /* order load from updated before other loads */
+
 	switch (type) {
 	case hwmon_temp:
 		*val = priv->temp_input[channel];
@@ -123,6 +125,8 @@ static int kraken2_raw_event(struct hid_device *hdev,
 
 	priv->fan_input[0] = get_unaligned_be16(data + 3);
 	priv->fan_input[1] = get_unaligned_be16(data + 5);
+
+	smp_wmb(); /* order store to updated after other stores */
 
 	priv->updated = jiffies;
 
