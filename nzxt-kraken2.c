@@ -30,9 +30,9 @@ static const char *const kraken2_fan_label[] = {
 struct kraken2_priv_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
-	s32 temp_input[1];
-	u16 fan_input[2];
-	unsigned long updated; /* jiffies */
+	volatile s32 temp_input[1];
+	volatile u16 fan_input[2];
+	volatile unsigned long updated; /* jiffies */
 };
 
 static umode_t kraken2_is_visible(const void *data,
