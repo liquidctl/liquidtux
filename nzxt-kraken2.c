@@ -30,9 +30,9 @@ static const char *const kraken2_fan_label[] = {
 struct kraken2_priv_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
-	volatile s32 temp_input[1];
-	volatile u16 fan_input[2];
-	volatile unsigned long updated; /* jiffies */
+	s32 temp_input[1];
+	u16 fan_input[2];
+	unsigned long updated; /* jiffies */
 };
 
 static umode_t kraken2_is_visible(const void *data,
@@ -46,18 +46,22 @@ static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
 			u32 attr, int channel, long *val)
 {
 	struct kraken2_priv_data *priv = dev_get_drvdata(dev);
+	unsigned long expires;
 
-	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
+	/*
+	 * Order load from ->updated before the data it refers to.
+	 */
+	expires = smp_load_acquire(&priv->updated) + STATUS_VALIDITY * HZ;
+
+	if (time_after(jiffies, expires))
 		return -ENODATA;
-
-	smp_rmb(); /* order load from updated before other loads */
 
 	switch (type) {
 	case hwmon_temp:
-		*val = priv->temp_input[channel];
+		*val = READ_ONCE(priv->temp_input[channel]);
 		break;
 	case hwmon_fan:
-		*val = priv->fan_input[channel];
+		*val = READ_ONCE(priv->fan_input[channel]);
 		break;
 	default:
 		return -EOPNOTSUPP; /* unreachable */
@@ -121,14 +125,15 @@ static int kraken2_raw_event(struct hid_device *hdev,
 	 * and that the missing steps are artifacts of how the firmware
 	 * processes the raw sensor data.
 	 */
-	priv->temp_input[0] = data[1] * 1000 + data[2] * 100;
+	WRITE_ONCE(priv->temp_input[0], data[1] * 1000 + data[2] * 100);
 
-	priv->fan_input[0] = get_unaligned_be16(data + 3);
-	priv->fan_input[1] = get_unaligned_be16(data + 5);
+	WRITE_ONCE(priv->fan_input[0], get_unaligned_be16(data + 3));
+	WRITE_ONCE(priv->fan_input[1], get_unaligned_be16(data + 5));
 
-	smp_wmb(); /* order store to updated after other stores */
-
-	priv->updated = jiffies;
+	/*
+	 * Order store to ->updated after the data it refers to.
+	 */
+	smp_store_release(&priv->updated, jiffies);
 
 	return 0;
 }
