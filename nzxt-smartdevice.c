@@ -16,11 +16,12 @@
  * device.
  *
  * Before initialization:
+ * - TODO are PWM changes honored or ignored?
  * - the device does not send status reports;
- *  - all fans default to 40% PWM.
+ * - all fans default to 40% PWM.
  *
  * After initialization:
- * - device sends status reports;
+ * - the device sends status reports five times a second;
  * - for channels in use, the control mode has been detected and PWM changes
  *   are honored;
  * - for channels that were not detected as in use, fan speeds, current and
@@ -30,8 +31,8 @@
  * Control mode and PWM settings only persist as long as the USB device is
  * connected and powered on.
  *
- * TODO check pwmconfig + fancontrol + other daemons
- * TODO report IDs are indeed used?
+ * TODO check if pwmconfig + fancontrol can handle our pwm attributes
+ * TODO check in captured traffic that report IDs are indeed used?
  *
  * Copyright 2019-2021  Jonas Malaco <jonas@protocubo.io>
  */
@@ -48,9 +49,7 @@
 #define PID_GRIDPLUS3		0x1711
 #define PID_SMARTDEVICE		0x1714
 
-#define MAX_CHANNELS		6
-
-#define REPORT_REQ_INIT 	0x01
+#define REPORT_REQ_INIT		0x01
 #define REQ_INIT_DETECT		0x5c
 #define REQ_INIT_OPEN		0x5d
 
@@ -60,16 +59,16 @@
 #define REPORT_CONFIG		0x02
 #define CONFIG_FAN_PWM		0x4d
 
-/* FIXME remove, only used for testing */
+/* TODO remove, only used for testing */
 #include <linux/moduleparam.h>
-static bool do_not_init = false;
-module_param(do_not_init, bool, 0);
-MODULE_PARM_DESC(do_not_init, "do not request device initialization");
+static bool noinit;
+module_param(noinit, bool, 0444);
+MODULE_PARM_DESC(noinit, "do not run initialization routines (testing only)");
 
 /**
  * smartdevice_fan_mode - Device fan control mode.
  * @smartdevice_no_control:	Control is disabled, typically means no fan has
- * 				been detected on the channel.
+ *				been detected on the channel.
  * @smartdevice_dc_control:	Control is enabled, mode is DC.
  * @smartdevice_pwm_control:	Control is enabled, mode is PWM.
  */
@@ -90,26 +89,22 @@ enum __packed smartdevice_fan_mode {
  *
  * Current and voltage are stored in centiamperes and centivolts to save some
  * space.
- *
- * All fields are marked as volatile to inhibit optimizations to loads/stores,
- * since those happen concurrently in process and interrupt contexts.
  */
 struct smartdevice_channel_data {
-	volatile u16 rpms;
-	volatile u16 centiamps;
-	volatile u16 centivolts;
-	volatile u8 pwm;
-	volatile enum smartdevice_fan_mode mode;
-	volatile unsigned long updated;
+	u16 rpms;
+	u16 centiamps;
+	u16 centivolts;
+	u8 pwm;
+	enum smartdevice_fan_mode mode;
+	unsigned long updated;
 };
 
 /**
  * smartdevice_priv_data - Driver private data.
  * @hid_dev:	HID device.
  * @hwmon_dev:	HWMON device.
- * @lock:	protects the output buffer @out and writes to @status
- * 	  	from process context.
- * @out:	DMA-safe output buffer.
+ * @lock:	Protects the output buffer @out, and writes to @status[].pwm.
+ * @out:	DMA-safe output buffer for HID writes.
  * @cha_cnt:	Number of channels.
  * @status:	Last known status for each channel.
  */
@@ -117,7 +112,7 @@ struct smartdevice_priv_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
 
-	struct mutex lock;
+	struct mutex lock; /* see comment above */
 	u8 out[8];
 
 	int cha_cnt;
@@ -141,9 +136,8 @@ static umode_t smartdevice_is_visible(const void *data,
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
+		case hwmon_pwm_enable:
 			return 0644;
-		case hwmon_pwm_enable: /* FIXME remove */
-			return 0;
 		case hwmon_pwm_mode:
 			return 0444;
 		default:
@@ -155,36 +149,20 @@ static umode_t smartdevice_is_visible(const void *data,
 }
 
 static int smartdevice_read_pwm(struct smartdevice_channel_data *channel,
-				 u32 attr, long *val)
+				u32 attr, long *val)
 {
 	switch (attr) {
-		case hwmon_pwm_input:
-			*val = channel->pwm;
-			break;
-		case hwmon_pwm_enable: /* FIXME remove */
-			switch (channel->mode) {
-				case smartdevice_no_control:
-					*val = 0;
-					break;
-				default:
-					*val = 1;
-					break;
-			}
-			break;
-		case hwmon_pwm_mode:
-			switch (channel->mode) {
-				case smartdevice_no_control:
-					return -ENODATA;
-				case smartdevice_dc_control:
-					*val = 0;
-					break;
-				case smartdevice_pwm_control:
-					*val = 1;
-					break;
-			}
-			break;
-		default:
-			return -EOPNOTSUPP; /* unreachable */
+	case hwmon_pwm_input:
+		*val = channel->pwm;
+		break;
+	case hwmon_pwm_enable:
+		*val = channel->mode != smartdevice_no_control;
+		break;
+	case hwmon_pwm_mode:
+		*val = channel->mode != smartdevice_dc_control;
+		break;
+	default:
+		return -EOPNOTSUPP; /* unreachable */
 	}
 
 	return 0;
@@ -194,12 +172,12 @@ static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
 			    u32 attr, int channel, long *val)
 {
 	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
+	unsigned long expires;
 
-	/* FIXME formatting */
-	if (time_after(jiffies, priv->status[channel].updated + STATUS_VALIDITY * HZ))
+	expires = priv->status[channel].updated + STATUS_VALIDITY * HZ;
+
+	if (time_after(jiffies, expires))
 		return -ENODATA;
-
-	smp_rmb(); /* order reading .updated before attributes */
 
 	switch (type) {
 	case hwmon_fan:
@@ -220,8 +198,8 @@ static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
 	return 0;
 }
 
-static int smartdevice_write_pwm_unlocked(struct smartdevice_priv_data *priv,
-					  int channel, long val)
+static int smartdevice_write_pwm_with_lock(struct smartdevice_priv_data *priv,
+					   int channel, long val)
 {
 	int ret;
 
@@ -237,7 +215,7 @@ static int smartdevice_write_pwm_unlocked(struct smartdevice_priv_data *priv,
 	if (ret < 0)
 		return ret;
 	if (ret != 5)
-		return -EPIPE; /* FIXME */
+		return -EIO; /* FIXME */
 
 	/*
 	 * Store the value that was just set; the device does not support
@@ -254,21 +232,24 @@ static int smartdevice_write(struct device *dev, enum hwmon_sensor_types type,
 	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
 	int ret;
 
-	/* FIXME remove, probably */
+	/*
+	 * We allow write attempts to not break pwmconfig (FIXME &fancontrol?),
+	 * but these are not actually supported by the device.
+	 */
 	if (attr == hwmon_pwm_enable)
 		return 0;
 
 	/*
-	 * The device does not honor changes to the duty cycle of a fan channel
-	 * it thinks is unconnected.
+	 * We know that the device wont honor changes to a fan channel it
+	 * thinks is unconnected.
 	 */
 	if (priv->status[channel].mode == smartdevice_no_control)
-		return -EOPNOTSUPP; /* FIXME */
+		return -EOPNOTSUPP;
 
 	if (mutex_lock_interruptible(&priv->lock))
 		return -EINTR;
 
-	ret = smartdevice_write_pwm_unlocked(priv, channel, val);
+	ret = smartdevice_write_pwm_with_lock(priv, channel, val);
 
 	mutex_unlock(&priv->lock);
 
@@ -330,6 +311,7 @@ static int smartdevice_raw_event(struct hid_device *hdev,
 	priv = hid_get_drvdata(hdev);
 
 	channel = data[15] >> 4;
+
 	if (channel > priv->cha_cnt)
 		return 0;
 
@@ -337,8 +319,6 @@ static int smartdevice_raw_event(struct hid_device *hdev,
 	priv->status[channel].centiamps = data[9] * 100 + data[10];
 	priv->status[channel].centivolts = data[7] * 100 + data[8];
 	priv->status[channel].mode = data[15] & 0x3;
-
-	smp_wmb(); /* order writing .updated after attributes */
 
 	priv->status[channel].updated = jiffies;
 
@@ -350,7 +330,7 @@ static int smartdevice_req_init(struct hid_device *hdev, u8 *buf)
 	u8 cmds[2] = {REQ_INIT_DETECT, REQ_INIT_OPEN};
 	int i, ret;
 
-	if (do_not_init)
+	if (noinit)
 		return 0;
 
 	buf[0] = REPORT_REQ_INIT;
@@ -361,9 +341,41 @@ static int smartdevice_req_init(struct hid_device *hdev, u8 *buf)
 		if (ret < 0)
 			return ret;
 		if (ret != 2)
-			return -EPIPE; /* FIXME */
+			return -EIO; /* FIXME */
 	}
 
+	return 0;
+}
+
+static int smartdevice_driver_init_with_lock(struct smartdevice_priv_data *priv)
+{
+	int i, ret;
+
+	ret = smartdevice_req_init(priv->hid_dev, priv->out);
+	if (ret) {
+		hid_err(priv->hid_dev, "request init failed with %d\n", ret);
+		return ret;
+	}
+
+	for (i = 0; i < priv->cha_cnt; i++) {
+		/*
+		 * Initialize ->updated to STATUS_VALIDITY seconds in the past,
+		 * making the initial empty data invalid for smartdevice_read
+		 * without the need for a special case there.
+		 */
+		priv->status[i].updated = jiffies - STATUS_VALIDITY * HZ;
+
+		/*
+		 * Mimic the device upon true initialization and ensure
+		 * predictable behavior if the driver has been previously
+		 * unbound.
+		 */
+		ret = smartdevice_write_pwm_with_lock(priv, i, 40 * 255 / 100);
+		if (ret) {
+			hid_err(priv->hid_dev, "write pwm failed with %d\n", ret);
+			return ret;
+		}
+	}
 	return 0;
 }
 
@@ -377,12 +389,11 @@ static int smartdevice_reset_resume(struct hid_device *hdev)
 	hid_info(hdev, "(reset_resume) requesting new initialization");
 
 	mutex_lock(&priv->lock);
-	ret = smartdevice_req_init(hdev, priv->out);
+	ret = smartdevice_driver_init_with_lock(priv);
 	mutex_unlock(&priv->lock);
 
-	if (ret) {
+	if (ret)
 		hid_err(hdev, "req init (reset_resume) failed with %d\n", ret);
-	}
 
 	return ret;
 }
@@ -400,7 +411,7 @@ static int smartdevice_probe(struct hid_device *hdev,
 {
 	struct smartdevice_priv_data *priv;
 	char *hwmon_name;
-	int i, cha_cnt, ret;
+	int cha_cnt, ret;
 
 	switch (id->product) {
 	case PID_GRIDPLUS3:
@@ -416,13 +427,10 @@ static int smartdevice_probe(struct hid_device *hdev,
 	}
 
 	/* FIXME remove */
-	hid_info(hdev, "smartdevice_priv_data size: %ld bytes\n",
-		 sizeof(*priv) + sizeof(*priv->status) * cha_cnt);
-	hid_info(hdev, "with mutex size: %ld bytes\n", sizeof(struct mutex));
+	hid_info(hdev, "smartdevice_priv_data: %ld bytes, mutex: %ld bytes\n",
+		 struct_size(priv, status, cha_cnt), sizeof(struct mutex));
 
-	priv = devm_kzalloc(&hdev->dev,
-			    sizeof(*priv) + sizeof(*priv->status) * cha_cnt,
-			    GFP_KERNEL);
+	priv = devm_kzalloc(&hdev->dev, struct_size(priv, status, cha_cnt), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
 
@@ -453,30 +461,10 @@ static int smartdevice_probe(struct hid_device *hdev,
 		goto fail_but_close;
 	}
 
-	ret = smartdevice_req_init(hdev, priv->out);
+	ret = smartdevice_driver_init_with_lock(priv);
 	if (ret) {
-		hid_err(hdev, "req init failed with %d\n", ret);
+		hid_err(hdev, "driver init failed with %d\n", ret);
 		goto fail_but_close;
-	}
-
-	for (i = 0; i < priv->cha_cnt; i++) {
-		/*
-		 * Initialize ->updated to STATUS_VALIDITY seconds in the past,
-		 * making the initial empty data invalid for smartdevice_read
-		 * without the need for a special case there.
-		 */
-		priv->status[i].updated = jiffies - STATUS_VALIDITY * HZ;
-
-		/*
-		 * Force 40% PWM: mimic the device upon true initialization and
-		 * ensure predictable behavior if the driver has been
-		 * previously unbound.
-		 */
-		ret = smartdevice_write_pwm_unlocked(priv, i, 40 * 255 / 100);
-		if (ret) {
-			hid_err(hdev, "write pwm failed with %d\n", ret);
-			goto fail_but_close;
-		}
 	}
 
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, hwmon_name,
