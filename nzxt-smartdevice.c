@@ -16,9 +16,9 @@
  * device.
  *
  * Before initialization:
- * - TODO are PWM changes honored or ignored?
- * - the device does not send status reports;
- * - all fans default to 40% PWM.
+ * - all fans default to 40% PWM;
+ * - PWM value changes are sometimes honored, other times ignored;
+ * - the device does not send status reports.
  *
  * After initialization:
  * - the device sends status reports five times a second;
@@ -30,9 +30,6 @@
  *
  * Control mode and PWM settings only persist as long as the USB device is
  * connected and powered on.
- *
- * TODO check if pwmconfig + fancontrol can handle our pwm attributes
- * TODO check in captured traffic that report IDs are indeed used?
  *
  * Copyright 2019-2021  Jonas Malaco <jonas@protocubo.io>
  */
