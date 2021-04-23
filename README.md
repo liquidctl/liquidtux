@@ -19,17 +19,17 @@ mainline kernel.
 
 This is the current state of the drivers in regards to this process:
 
-| Device | State | Driver name | hwmon name |
-| --- | --- | --- | --- |
-| NZXT Kraken X42/X52/X62/X72 | patches: [[1]][p-kraken2-v2] | `nzxt-kraken2` | `kraken2` |
-| NZXT Smart Device (V1) | getting ready to submit | `nzxt-smartdevice` | `smartdevice` |
-| NZXT Grid+ V3 | getting ready to submit | `nzxt-smartdevice` | `gridplus3` |
+| Device | Driver name | hwmon name | Upstreaming | Patches |
+| --- | --- | --- | --- | --- |
+| NZXT Kraken X42/X52/X62/X72 | `nzxt-kraken2` | `kraken2` | in hwmon-next | [[1]][p-kraken2-v2] |
+| NZXT Smart Device (V1) | `nzxt-grid3` | `smartdevice` | getting ready to submit | |
+| NZXT Grid+ V3 | `nzxt-grid3` | `gridplus3` | getting ready to submit | |
 
 This repository contains the latest state of each driver, including features
 and bug fixes been worked on but no yet submitted upstream.
 
-_Additionally, other hwmon drivers already exist in the mainline kernel for
-devices that liquidctl supports: [`corsair-cpro`], [`corsair-psu`]._
+_Note: other hwmon drivers exist in the mainline kernel for devices that
+liquidctl also supports: [`corsair-cpro`], [`corsair-psu`]._
 
 ## Installing with DKMS
 
@@ -39,7 +39,7 @@ package.  After the package is installed, manually load the desired drivers.
 
 ```
 $ sudo modprobe nzxt-kraken2            # NZXT Kraken X42/X52/X62/X72
-$ sudo modprobe nzxt-smartdevice        # NZXT Smart Device (V1)/Grid+ V3
+$ sudo modprobe nzxt-grid3              # NZXT Grid+ V3/Smart Device (V1)
 ```
 
 Those on other distros can experiment with directly using the provided
@@ -55,7 +55,7 @@ built modules can then be loaded with `insmod`.
 ```
 $ make
 $ sudo insmod nzxt-kraken2.ko           # NZXT Kraken X42/X52/X62/X72
-$ sudo insmod nzxt-smartdevice.ko       # NZXT Smart Device (V1)/Grid+ V3
+$ sudo insmod nzxt-grid3.ko             # NZXT Grid+ V3/Smart Device (V1)
 ```
 
 To unload them, use `rmmod` or `modprobe -r`.
