@@ -21,7 +21,7 @@ This is the current state of the drivers in regards to this process:
 
 | Device | Driver name | hwmon name | Upstreaming | Patches |
 | --- | --- | --- | --- | --- |
-| NZXT Kraken X42/X52/X62/X72 | `nzxt-kraken2` | `kraken2` | in hwmon-next | [[1]][p-kraken2-v2] |
+| NZXT Kraken X42/X52/X62/X72 | `nzxt-kraken2` | `kraken2` | in Linux 5.13 | [[1]][p-kraken2-v2] |
 | NZXT Smart Device (V1) | `nzxt-grid3` | `smartdevice` | getting ready to submit | |
 | NZXT Grid+ V3 | `nzxt-grid3` | `gridplus3` | getting ready to submit | |
 
