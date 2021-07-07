@@ -120,19 +120,19 @@ static int kraken3_raw_event(struct hid_device *hdev,
  */
 static int kraken3_init_device(struct hid_device *hdev, u8 *buf)
 {
-	u8 cmds[2][8] = {
-		{0x70, 0x02, 0x01, 0xb8, STATUS_INTERVAL}, /* set interval */
-		{0x70, 0x01}, /* initialize */
-	};
-	int i, ret;
+	u8 set_interval_cmd[5] = {0x70, 0x02, 0x01, 0xb8, STATUS_INTERVAL};
+	u8 finish_init_cmd[2] = {0x70, 0x01};
 
-	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
-		memcpy(buf, cmds[i], 8);
-		ret = hid_hw_output_report(hdev, buf, 2);
-		if (ret < 0)
-			return ret;
-		/* FIXME check actual number of bytes sent */
-	}
+	int ret;
+	memcpy(buf, set_interval_cmd, 5);
+	ret = hid_hw_output_report(hdev, buf, 5);
+	if (ret < 0)
+		return ret;
+
+	memcpy(buf, finish_init_cmd, 2);
+	ret = hid_hw_output_report(hdev, buf, 2);
+	if (ret < 0)
+		return ret;
 
 	return 0;
 }
