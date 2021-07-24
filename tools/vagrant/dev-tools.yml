@@ -1,0 +1,12 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+  - ansible.builtin.dnf:
+      name: [kernel-debug, kernel-debug-devel, lm_sensors, usbutils, bc]
+      state: latest
+  - ansible.builtin.shell: rpm -ql kernel-debug-core | grep /boot/vmlinuz-
+    register: kernel_file
+  - ansible.builtin.shell: "grubby --set-default={{ kernel_file.stdout }}"
+  - ansible.builtin.reboot:
+    when: kernel_file.stdout != "/boot/vmlinuz-" + ansible_kernel
