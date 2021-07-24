@@ -124,6 +124,7 @@ static int kraken3_init_device(struct hid_device *hdev, u8 *buf)
 	u8 finish_init_cmd[2] = {0x70, 0x01};
 
 	int ret;
+
 	memcpy(buf, set_interval_cmd, 5);
 	ret = hid_hw_output_report(hdev, buf, 5);
 	if (ret < 0)
