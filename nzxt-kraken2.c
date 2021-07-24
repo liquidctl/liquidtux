@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * nzxt-kraken2.c - hwmon driver for NZXT Kraken X42/X52/X62/X72 coolers
+ * hwmon driver for NZXT Kraken X42/X52/X62/X72 coolers
  *
  * The device asynchronously sends HID reports (with id 0x04) twice a second to
  * communicate current fan speed, pump speed and coolant temperature.  The

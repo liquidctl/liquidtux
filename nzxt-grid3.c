@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * nzxt-grid3.c - hwmon driver for NZXT Grid+ V3 and Smart Device (V1)
+ * hwmon driver for NZXT Grid+ V3 and Smart Device (V1)
  *
  * The device asynchronously sends HID reports five times a second to
  * communicate fan speed, current, voltage and control mode.  It does not
