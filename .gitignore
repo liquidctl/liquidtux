@@ -5,3 +5,5 @@
 Module.symvers
 
 !.gitignore
+!.github/
+!.checkpatch.conf
