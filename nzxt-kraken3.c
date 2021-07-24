@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * nzxt-kraken3.c - hwmon driver for NZXT Kraken X53/X63/X73 coolers
+ * hwmon driver for NZXT Kraken X53/X63/X73 coolers
  *
  * Copyright 2021  Jonas Malaco <jonas@protocubo.io>
  */
