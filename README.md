@@ -20,7 +20,7 @@ mainline kernel.
 This is the current state of the drivers in regards to this process:
 
 | Device | Driver name | hwmon name | Upstream |
-| --- | --- | --- | --- | --- |
+| --- | --- | --- | --- |
 | NZXT Kraken X42/X52/X62/X72 | `nzxt-kraken2` | `kraken2` | in Linux 5.13 (patches: [[1]][p-kraken2-v2]) |
 | NZXT Kraken X53/X63/X73 | `nzxt-kraken3` | `kraken3` | early work in progress |
 | NZXT Smart Device (V1)/Grid+ V3 | `nzxt-grid3` | `smartdevice` | getting ready to submit | |
