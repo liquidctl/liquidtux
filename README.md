@@ -21,9 +21,9 @@ This is the current state of the drivers in regards to this process:
 
 | Device | Driver name | hwmon name | Upstream |
 | --- | --- | --- | --- |
+| NZXT Grid+ V3/Smart Device (V1) | `nzxt-grid3` | `smartdevice` | getting ready to submit | |
 | NZXT Kraken X42/X52/X62/X72 | `nzxt-kraken2` | `kraken2` | in Linux 5.13 ([patch][p-kraken2-v2]) |
 | NZXT Kraken X53/X63/X73 | `nzxt-kraken3` | `kraken3` | early work in progress |
-| NZXT Smart Device (V1)/Grid+ V3 | `nzxt-grid3` | `smartdevice` | getting ready to submit | |
 | NZXT Smart Device V2/RGB & Fan Controller | `nzxt-rgb-fan-controller` | `nzxt_rgb_fan_controller` | iterating ([patch][p-rgb-fan-controller]) |
 
 This repository contains the latest state of each driver, including features
@@ -39,8 +39,10 @@ ArchLinux users can try the
 package.  After the package is installed, manually load the desired drivers.
 
 ```
-$ sudo modprobe nzxt-kraken2            # NZXT Kraken X42/X52/X62/X72
 $ sudo modprobe nzxt-grid3              # NZXT Grid+ V3/Smart Device (V1)
+$ sudo modprobe nzxt-kraken2            # NZXT Kraken X42/X52/X62/X72
+$ sudo modprobe nzxt-kraken3            # NZXT Kraken X53/X63/X73
+$ sudo modprobe nzxt-rgb-fan-controller # NZXT Smart Device V2/RGB & Fan Controller
 ```
 
 Those on other distros can experiment with directly using the provided
@@ -55,8 +57,10 @@ built modules can then be loaded with `insmod`.
 
 ```
 $ make
-$ sudo insmod nzxt-kraken2.ko           # NZXT Kraken X42/X52/X62/X72
 $ sudo insmod nzxt-grid3.ko             # NZXT Grid+ V3/Smart Device (V1)
+$ sudo insmod nzxt-kraken2.ko           # NZXT Kraken X42/X52/X62/X72
+$ sudo insmod nzxt-kraken3              # NZXT Kraken X53/X63/X73
+$ sudo insmod nzxt-rgb-fan-controller   # NZXT Smart Device V2/RGB & Fan Controller
 ```
 
 To unload them, use `rmmod` or `modprobe -r`.
