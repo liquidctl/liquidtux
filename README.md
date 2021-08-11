@@ -19,11 +19,12 @@ mainline kernel.
 
 This is the current state of the drivers in regards to this process:
 
-| Device | Driver name | hwmon name | Upstreaming | Patches |
+| Device | Driver name | hwmon name | Upstream |
 | --- | --- | --- | --- | --- |
-| NZXT Kraken X42/X52/X62/X72 | `nzxt-kraken2` | `kraken2` | in Linux 5.13 | [[1]][p-kraken2-v2] |
-| NZXT Smart Device (V1) | `nzxt-grid3` | `smartdevice` | getting ready to submit | |
-| NZXT Grid+ V3 | `nzxt-grid3` | `gridplus3` | getting ready to submit | |
+| NZXT Kraken X42/X52/X62/X72 | `nzxt-kraken2` | `kraken2` | in Linux 5.13 (patches: [[1]][p-kraken2-v2]) |
+| NZXT Kraken X53/X63/X73 | `nzxt-kraken3` | `kraken3` | early work in progress |
+| NZXT Smart Device (V1)/Grid+ V3 | `nzxt-grid3` | `smartdevice` | getting ready to submit | |
+| NZXT Smart Device V2/RGB & Fan Controller | `nzxt-rgb-fan-controller` | `nzxt_rgb_fan_controller` | iterating (patches: [[1]][p-rgb-fan-controller]] |
 
 This repository contains the latest state of each driver, including features
 and bug fixes been worked on but no yet submitted upstream.
@@ -76,3 +77,4 @@ $ sudo make modules_install
 [liquidtux-dkms-git-aur]: https://aur.archlinux.org/packages/liquidtux-dkms-git/
 [lm-sensors]: https://github.com/lm-sensors/lm-sensors
 [p-kraken2-v2]: https://patchwork.kernel.org/project/linux-hwmon/patch/20210319045544.416138-1-jonas@protocubo.io/
+[p-rgb-fan-controller]: https://patchwork.kernel.org/project/linux-hwmon/patch/20210725105925.620024-1-mezin.alexander@gmail.com/
