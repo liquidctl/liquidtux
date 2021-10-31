@@ -31,6 +31,25 @@
 
 #define UPDATE_INTERVAL_DEFAULT_MS 1000
 
+/* These strings match labels on the device exactly */
+static const char *const fan_label[] = {
+	"FAN 1",
+	"FAN 2",
+	"FAN 3",
+};
+
+static const char *const curr_label[] = {
+	"FAN 1 Current",
+	"FAN 2 Current",
+	"FAN 3 Current",
+};
+
+static const char *const in_label[] = {
+	"FAN 1 Voltage",
+	"FAN 2 Voltage",
+	"FAN 3 Voltage",
+};
+
 enum {
 	INPUT_REPORT_ID_FAN_CONFIG = 0x61,
 	INPUT_REPORT_ID_FAN_STATUS = 0x67,
@@ -239,7 +258,8 @@ static void handle_fan_status_report(struct drvdata *drvdata, void *data, int si
 	/*
 	 * The device sends INPUT_REPORT_ID_FAN_CONFIG = 0x61 report in response
 	 * to "detect fans" command. Only accept other data after getting 0x61,
-	 * to make sure that fan detection is complete and the data is not stale.
+	 * to make sure that fan detection is complete. In particular, fan
+	 * detection resets pwm values.
 	 */
 	if (!drvdata->fan_config_received) {
 		spin_unlock(&drvdata->wq.lock);
@@ -252,7 +272,7 @@ static void handle_fan_status_report(struct drvdata *drvdata, void *data, int si
 
 		/*
 		 * This should not happen (if my expectations about the device
-		 * are true).
+		 * are correct).
 		 *
 		 * Even if the userspace sends fan detect command through
 		 * hidraw, fan config report should arrive first.
@@ -292,8 +312,9 @@ static void handle_fan_status_report(struct drvdata *drvdata, void *data, int si
 	spin_unlock(&drvdata->wq.lock);
 }
 
-static umode_t hwmon_is_visible(const void *data, enum hwmon_sensor_types type,
-				u32 attr, int channel)
+static umode_t nzxt_smart2_hwmon_is_visible(const void *data,
+					    enum hwmon_sensor_types type,
+					    u32 attr, int channel)
 {
 	switch (type) {
 	case hwmon_pwm:
@@ -320,8 +341,8 @@ static umode_t hwmon_is_visible(const void *data, enum hwmon_sensor_types type,
 	}
 }
 
-static int hwmon_read(struct device *dev, enum hwmon_sensor_types type,
-		      u32 attr, int channel, long *val)
+static int nzxt_smart2_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
+				  u32 attr, int channel, long *val)
 {
 	struct drvdata *drvdata = dev_get_drvdata(dev);
 	int res = -EINVAL;
@@ -329,7 +350,7 @@ static int hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 	if (type == hwmon_chip) {
 		switch (attr) {
 		case hwmon_chip_update_interval:
-			*val = READ_ONCE(drvdata->update_interval);
+			*val = drvdata->update_interval;
 			return 0;
 
 		default:
@@ -346,34 +367,36 @@ static int hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 		 * 1) remembers pwm* values when it starts
 		 * 2) needs pwm*_enable to be 1 on controlled fans
 		 * So make sure we have correct data before allowing pwm* reads.
+		 * Returning errors for pwm of fan speed read can even cause
+		 * fancontrol to shut down. So the wait is unavoidable.
 		 */
 		switch (attr) {
 		case hwmon_pwm_enable:
 			res = wait_event_interruptible_locked_irq(drvdata->wq,
 								  drvdata->fan_config_received);
+			if (res)
+				goto unlock;
 
-			if (res == 0)
-				*val = drvdata->fan_type[channel] != FAN_TYPE_NONE;
-
+			*val = drvdata->fan_type[channel] != FAN_TYPE_NONE;
 			break;
 
 		case hwmon_pwm_mode:
 			res = wait_event_interruptible_locked_irq(drvdata->wq,
 								  drvdata->fan_config_received);
+			if (res)
+				goto unlock;
 
-			if (res == 0)
-				*val = drvdata->fan_type[channel] == FAN_TYPE_PWM;
-
+			*val = drvdata->fan_type[channel] == FAN_TYPE_PWM;
 			break;
 
 		case hwmon_pwm_input:
 			res = wait_event_interruptible_locked_irq(drvdata->wq,
 								  drvdata->pwm_status_received);
+			if (res)
+				goto unlock;
 
-			if (res == 0)
-				*val = scale_pwm_value(drvdata->fan_duty_percent[channel],
-						       100, 255);
-
+			*val = scale_pwm_value(drvdata->fan_duty_percent[channel],
+					       100, 255);
 			break;
 		}
 		break;
@@ -387,9 +410,10 @@ static int hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 		if (attr == hwmon_fan_input) {
 			res = wait_event_interruptible_locked_irq(drvdata->wq,
 								  drvdata->pwm_status_received);
+			if (res)
+				goto unlock;
 
-			if (res == 0)
-				*val = drvdata->fan_rpm[channel];
+			*val = drvdata->fan_rpm[channel];
 		}
 		break;
 
@@ -397,9 +421,10 @@ static int hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 		if (attr == hwmon_in_input) {
 			res = wait_event_interruptible_locked_irq(drvdata->wq,
 								  drvdata->voltage_status_received);
+			if (res)
+				goto unlock;
 
-			if (res == 0)
-				*val = drvdata->fan_in[channel];
+			*val = drvdata->fan_in[channel];
 		}
 		break;
 
@@ -407,9 +432,10 @@ static int hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 		if (attr == hwmon_curr_input) {
 			res = wait_event_interruptible_locked_irq(drvdata->wq,
 								  drvdata->voltage_status_received);
+			if (res)
+				goto unlock;
 
-			if (res == 0)
-				*val = drvdata->fan_curr[channel];
+			*val = drvdata->fan_curr[channel];
 		}
 		break;
 
@@ -417,6 +443,7 @@ static int hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 		break;
 	}
 
+unlock:
 	spin_unlock_irq(&drvdata->wq.lock);
 	return res;
 }
@@ -425,8 +452,6 @@ static int send_output_report(struct drvdata *drvdata, const void *data,
 			      size_t data_size)
 {
 	int ret;
-
-	lockdep_assert_held(&drvdata->mutex);
 
 	if (data_size > sizeof(drvdata->output_buffer))
 		return -EINVAL;
@@ -459,6 +484,8 @@ static int set_pwm(struct drvdata *drvdata, int channel, long val)
 
 	report.duty_percent[channel] = duty_percent;
 	ret = send_output_report(drvdata, &report, sizeof(report));
+	if (ret)
+		goto unlock;
 
 	/*
 	 * pwmconfig and fancontrol scripts expect pwm writes to take effect
@@ -471,20 +498,19 @@ static int set_pwm(struct drvdata *drvdata, int channel, long val)
 	 * update. This avoids "fan stuck" messages from pwmconfig, and
 	 * fancontrol setting fan speed to 100% during shutdown.
 	 */
-	if (ret == 0) {
-		spin_lock_bh(&drvdata->wq.lock);
-		drvdata->fan_duty_percent[channel] = duty_percent;
-		spin_unlock_bh(&drvdata->wq.lock);
-	}
+	spin_lock_bh(&drvdata->wq.lock);
+	drvdata->fan_duty_percent[channel] = duty_percent;
+	spin_unlock_bh(&drvdata->wq.lock);
 
+unlock:
 	mutex_unlock(&drvdata->mutex);
-
 	return ret;
 }
 
 /*
  * Workaround for fancontrol/pwmconfig trying to write to pwm*_enable even if it
- * already is 1.
+ * already is 1 and read-only. Otherwise, fancontrol won't restore pwm on
+ * shutdown properly.
  */
 static int set_pwm_enable(struct drvdata *drvdata, int channel, long val)
 {
@@ -495,20 +521,20 @@ static int set_pwm_enable(struct drvdata *drvdata, int channel, long val)
 
 	res = wait_event_interruptible_locked_irq(drvdata->wq,
 						  drvdata->fan_config_received);
+	if (res) {
+		spin_unlock_irq(&drvdata->wq.lock);
+		return res;
+	}
 
-	if (res == 0)
-		expected_val = drvdata->fan_type[channel] != FAN_TYPE_NONE;
+	expected_val = drvdata->fan_type[channel] != FAN_TYPE_NONE;
 
 	spin_unlock_irq(&drvdata->wq.lock);
-
-	if (res)
-		return res;
 
 	return (val == expected_val) ? 0 : -EOPNOTSUPP;
 }
 
 /*
- * Control byte	| Actual update interval
+ * Control byte	| Actual update interval in seconds
  * 0xff		| 65.5
  * 0xf7		| 63.46
  * 0x7f		| 32.74
@@ -553,11 +579,11 @@ static int set_update_interval(struct drvdata *drvdata, long val)
 	int ret;
 
 	ret = send_output_report(drvdata, report, sizeof(report));
-	if (ret == 0)
-		WRITE_ONCE(drvdata->update_interval,
-			   control_byte_to_update_interval(control));
+	if (ret)
+		return ret;
 
-	return ret;
+	drvdata->update_interval = control_byte_to_update_interval(control);
+	return 0;
 }
 
 static int init_device(struct drvdata *drvdata, long update_interval)
@@ -568,34 +594,17 @@ static int init_device(struct drvdata *drvdata, long update_interval)
 		INIT_COMMAND_DETECT_FANS,
 	};
 
-	/*
-	 * This lock is here only to avoid lockdep warning. Am I using lockdep
-	 * incorrectly?
-	 * There's (currently) no way init_device() could be called multiple
-	 * times concurrently (or concurrently with other functions that lock
-	 * the mutex).
-	 */
-	mutex_lock(&drvdata->mutex);
-
-	spin_lock_bh(&drvdata->wq.lock);
-	drvdata->fan_config_received = false;
-	drvdata->pwm_status_received = false;
-	drvdata->voltage_status_received = false;
-	spin_unlock_bh(&drvdata->wq.lock);
-
 	ret = send_output_report(drvdata, detect_fans_report,
 				 sizeof(detect_fans_report));
+	if (ret)
+		return ret;
 
-	if (ret == 0)
-		ret = set_update_interval(drvdata, update_interval);
-
-	mutex_unlock(&drvdata->mutex);
-
-	return ret;
+	return set_update_interval(drvdata, update_interval);
 }
 
-static int hwmon_write(struct device *dev, enum hwmon_sensor_types type,
-		       u32 attr, int channel, long val)
+static int nzxt_smart2_hwmon_write(struct device *dev,
+				   enum hwmon_sensor_types type, u32 attr,
+				   int channel, long val)
 {
 	struct drvdata *drvdata = dev_get_drvdata(dev);
 	int ret;
@@ -634,30 +643,56 @@ static int hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 	}
 }
 
-static const struct hwmon_ops hwmon_ops = {
-	.is_visible = hwmon_is_visible,
-	.read = hwmon_read,
-	.write = hwmon_write,
+static int nzxt_smart2_hwmon_read_string(struct device *dev,
+					 enum hwmon_sensor_types type, u32 attr,
+					 int channel, const char **str)
+{
+	switch (type) {
+	case hwmon_fan:
+		*str = fan_label[channel];
+		return 0;
+	case hwmon_curr:
+		*str = curr_label[channel];
+		return 0;
+	case hwmon_in:
+		*str = in_label[channel];
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
+static const struct hwmon_ops nzxt_smart2_hwmon_ops = {
+	.is_visible = nzxt_smart2_hwmon_is_visible,
+	.read = nzxt_smart2_hwmon_read,
+	.read_string = nzxt_smart2_hwmon_read_string,
+	.write = nzxt_smart2_hwmon_write,
 };
 
-static const struct hwmon_channel_info *channel_info[] = {
-	HWMON_CHANNEL_INFO(fan, HWMON_F_INPUT, HWMON_F_INPUT, HWMON_F_INPUT),
+static const struct hwmon_channel_info *nzxt_smart2_channel_info[] = {
+	HWMON_CHANNEL_INFO(fan, HWMON_F_INPUT | HWMON_F_LABEL,
+			   HWMON_F_INPUT | HWMON_F_LABEL,
+			   HWMON_F_INPUT | HWMON_F_LABEL),
 	HWMON_CHANNEL_INFO(pwm, HWMON_PWM_INPUT | HWMON_PWM_MODE | HWMON_PWM_ENABLE,
 			   HWMON_PWM_INPUT | HWMON_PWM_MODE | HWMON_PWM_ENABLE,
 			   HWMON_PWM_INPUT | HWMON_PWM_MODE | HWMON_PWM_ENABLE),
-	HWMON_CHANNEL_INFO(in, HWMON_I_INPUT, HWMON_I_INPUT, HWMON_I_INPUT),
-	HWMON_CHANNEL_INFO(curr, HWMON_C_INPUT, HWMON_C_INPUT, HWMON_C_INPUT),
+	HWMON_CHANNEL_INFO(in, HWMON_I_INPUT | HWMON_I_LABEL,
+			   HWMON_I_INPUT | HWMON_I_LABEL,
+			   HWMON_I_INPUT | HWMON_I_LABEL),
+	HWMON_CHANNEL_INFO(curr, HWMON_C_INPUT | HWMON_C_LABEL,
+			   HWMON_C_INPUT | HWMON_C_LABEL,
+			   HWMON_C_INPUT | HWMON_C_LABEL),
 	HWMON_CHANNEL_INFO(chip, HWMON_C_UPDATE_INTERVAL),
 	NULL
 };
 
-static const struct hwmon_chip_info chip_info = {
-	.ops = &hwmon_ops,
-	.info = channel_info,
+static const struct hwmon_chip_info nzxt_smart2_chip_info = {
+	.ops = &nzxt_smart2_hwmon_ops,
+	.info = nzxt_smart2_channel_info,
 };
 
-static int hid_raw_event(struct hid_device *hdev, struct hid_report *report,
-			 u8 *data, int size)
+static int nzxt_smart2_hid_raw_event(struct hid_device *hdev,
+				     struct hid_report *report, u8 *data, int size)
 {
 	struct drvdata *drvdata = hid_get_drvdata(hdev);
 	u8 report_id = *data;
@@ -675,14 +710,25 @@ static int hid_raw_event(struct hid_device *hdev, struct hid_report *report,
 	return 0;
 }
 
-static int hid_reset_resume(struct hid_device *hdev)
+static int nzxt_smart2_hid_reset_resume(struct hid_device *hdev)
 {
 	struct drvdata *drvdata = hid_get_drvdata(hdev);
 
-	return init_device(drvdata, READ_ONCE(drvdata->update_interval));
+	/*
+	 * Userspace is still frozen (so no concurrent sysfs attribute access
+	 * is possible), but raw_event can already be called concurrently.
+	 */
+	spin_lock_bh(&drvdata->wq.lock);
+	drvdata->fan_config_received = false;
+	drvdata->pwm_status_received = false;
+	drvdata->voltage_status_received = false;
+	spin_unlock_bh(&drvdata->wq.lock);
+
+	return init_device(drvdata, drvdata->update_interval);
 }
 
-static int hid_probe(struct hid_device *hdev, const struct hid_device_id *id)
+static int nzxt_smart2_hid_probe(struct hid_device *hdev,
+				 const struct hid_device_id *id)
 {
 	struct drvdata *drvdata;
 	int ret;
@@ -717,9 +763,8 @@ static int hid_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	init_device(drvdata, UPDATE_INTERVAL_DEFAULT_MS);
 
 	drvdata->hwmon =
-		hwmon_device_register_with_info(&hdev->dev,
-						"nzxt_rgb_fan_controller",
-						drvdata, &chip_info, NULL);
+		hwmon_device_register_with_info(&hdev->dev, "nzxtsmart2", drvdata,
+						&nzxt_smart2_chip_info, NULL);
 	if (IS_ERR(drvdata->hwmon)) {
 		ret = PTR_ERR(drvdata->hwmon);
 		goto out_hw_close;
@@ -735,7 +780,7 @@ out_hw_stop:
 	return ret;
 }
 
-static void hid_remove(struct hid_device *hdev)
+static void nzxt_smart2_hid_remove(struct hid_device *hdev)
 {
 	struct drvdata *drvdata = hid_get_drvdata(hdev);
 
@@ -745,7 +790,7 @@ static void hid_remove(struct hid_device *hdev)
 	hid_hw_stop(hdev);
 }
 
-static const struct hid_device_id hid_id_table[] = {
+static const struct hid_device_id nzxt_smart2_hid_id_table[] = {
 	{ HID_USB_DEVICE(0x1e71, 0x2006) }, /* NZXT Smart Device V2 */
 	{ HID_USB_DEVICE(0x1e71, 0x200d) }, /* NZXT Smart Device V2 */
 	{ HID_USB_DEVICE(0x1e71, 0x2009) }, /* NZXT RGB & Fan Controller */
@@ -754,28 +799,28 @@ static const struct hid_device_id hid_id_table[] = {
 	{},
 };
 
-static struct hid_driver hid_driver = {
-	.name = "nzxt_rgb_fan_controller",
-	.id_table = hid_id_table,
-	.probe = hid_probe,
-	.remove = hid_remove,
-	.raw_event = hid_raw_event,
+static struct hid_driver nzxt_smart2_hid_driver = {
+	.name = "nzxt-smart2",
+	.id_table = nzxt_smart2_hid_id_table,
+	.probe = nzxt_smart2_hid_probe,
+	.remove = nzxt_smart2_hid_remove,
+	.raw_event = nzxt_smart2_hid_raw_event,
 #ifdef CONFIG_PM
-	.reset_resume = hid_reset_resume,
+	.reset_resume = nzxt_smart2_hid_reset_resume,
 #endif
 };
 
-static int __init nzxt_rgb_fan_controller_init(void)
+static int __init nzxt_smart2_init(void)
 {
-	return hid_register_driver(&hid_driver);
+	return hid_register_driver(&nzxt_smart2_hid_driver);
 }
 
-static void __exit nzxt_rgb_fan_controller_exit(void)
+static void __exit nzxt_smart2_exit(void)
 {
-	hid_unregister_driver(&hid_driver);
+	hid_unregister_driver(&nzxt_smart2_hid_driver);
 }
 
-MODULE_DEVICE_TABLE(hid, hid_id_table);
+MODULE_DEVICE_TABLE(hid, nzxt_smart2_hid_id_table);
 MODULE_AUTHOR("Aleksandr Mezin <mezin.alexander@gmail.com>");
 MODULE_DESCRIPTION("Driver for NZXT RGB & Fan Controller/Smart Device V2");
 MODULE_LICENSE("GPL");
@@ -783,8 +828,8 @@ MODULE_LICENSE("GPL");
 /*
  * With module_init()/module_hid_driver() and the driver built into the kernel:
  *
- * Driver 'nzxt_rgb_fan_controller' was unable to register with bus_type 'hid'
- * because the bus was not initialized.
+ * Driver 'nzxt_smart2' was unable to register with bus_type 'hid' because the
+ * bus was not initialized.
  */
-late_initcall(nzxt_rgb_fan_controller_init);
-module_exit(nzxt_rgb_fan_controller_exit);
+late_initcall(nzxt_smart2_init);
+module_exit(nzxt_smart2_exit);
