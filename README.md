@@ -24,7 +24,7 @@ This is the current state of the drivers in regards to this process:
 | NZXT Grid+ V3/Smart Device (V1) | `nzxt-grid3` | `smartdevice` | getting ready to submit | |
 | NZXT Kraken X42/X52/X62/X72 | `nzxt-kraken2` | `kraken2` | in Linux 5.13 ([patch][p-kraken2-v2]) |
 | NZXT Kraken X53/X63/X73 | `nzxt-kraken3` | `kraken3` | early work in progress |
-| NZXT Smart Device V2/RGB & Fan Controller | `nzxt-rgb-fan-controller` | `nzxt_rgb_fan_controller` | iterating ([patch][p-rgb-fan-controller]) |
+| NZXT Smart Device V2/RGB & Fan Controller | `nzxt-smart2` | `nzxtsmart2` | iterating ([patch][p-smart2]) |
 
 This repository contains the latest state of each driver, including features
 and bug fixes been worked on but no yet submitted upstream.
@@ -42,7 +42,7 @@ package.  After the package is installed, manually load the desired drivers.
 $ sudo modprobe nzxt-grid3              # NZXT Grid+ V3/Smart Device (V1)
 $ sudo modprobe nzxt-kraken2            # NZXT Kraken X42/X52/X62/X72
 $ sudo modprobe nzxt-kraken3            # NZXT Kraken X53/X63/X73
-$ sudo modprobe nzxt-rgb-fan-controller # NZXT Smart Device V2/RGB & Fan Controller
+$ sudo modprobe nzxt-smart2             # NZXT Smart Device V2/RGB & Fan Controller
 ```
 
 Those on other distros can experiment with directly using the provided
@@ -60,7 +60,7 @@ $ make
 $ sudo insmod nzxt-grid3.ko             # NZXT Grid+ V3/Smart Device (V1)
 $ sudo insmod nzxt-kraken2.ko           # NZXT Kraken X42/X52/X62/X72
 $ sudo insmod nzxt-kraken3              # NZXT Kraken X53/X63/X73
-$ sudo insmod nzxt-rgb-fan-controller   # NZXT Smart Device V2/RGB & Fan Controller
+$ sudo insmod nzxt-smart2               # NZXT Smart Device V2/RGB & Fan Controller
 ```
 
 To unload them, use `rmmod` or `modprobe -r`.
@@ -81,4 +81,4 @@ $ sudo make modules_install
 [liquidtux-dkms-git-aur]: https://aur.archlinux.org/packages/liquidtux-dkms-git/
 [lm-sensors]: https://github.com/lm-sensors/lm-sensors
 [p-kraken2-v2]: https://patchwork.kernel.org/project/linux-hwmon/patch/20210319045544.416138-1-jonas@protocubo.io/
-[p-rgb-fan-controller]: https://patchwork.kernel.org/project/linux-hwmon/patch/20210725105925.620024-1-mezin.alexander@gmail.com/
+[p-smart2]: https://patchwork.kernel.org/project/linux-hwmon/patch/20211031033058.151014-1-mezin.alexander@gmail.com/
