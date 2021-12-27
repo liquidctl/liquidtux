@@ -1,0 +1,38 @@
+name: build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        kernel_version:
+          - master
+          - v5.15
+          - v5.10
+        kconfig:
+          - "-e CONFIG_PM"
+          - "-d CONFIG_PM"
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          path: src
+      - run: echo "::add-matcher::src/.github/workflows/gcc-problem-matcher.json"
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y libelf-dev
+      - uses: actions/checkout@v2
+        with:
+          repository: torvalds/linux
+          path: linux
+          ref: ${{ matrix.kernel_version }}
+      - run: cp src/.github/workflows/all.config linux/
+      - run: scripts/config --file all.config ${{ matrix.kconfig }}
+        working-directory: linux
+      - run: KCONFIG_ALLCONFIG=1 make allnoconfig
+        working-directory: linux
+      - run: make -j$(nproc)
+        working-directory: linux
+      - run: make -k "KDIR=${{ github.workspace }}/linux"
+        working-directory: src
