@@ -138,11 +138,10 @@ static int kraken3_init_device(struct hid_device *hdev, u8 *buf)
 	return 0;
 }
 
-#ifdef CONFIG_PM
 /*
  * Caller must ensure exclusive access to priv->out.
  */
-static int kraken3_reset_resume(struct hid_device *hdev)
+static int __maybe_unused kraken3_reset_resume(struct hid_device *hdev)
 {
 	struct kraken3_priv_data *priv = hid_get_drvdata(hdev);
 	int ret;
@@ -153,7 +152,6 @@ static int kraken3_reset_resume(struct hid_device *hdev)
 
 	return ret;
 }
-#endif
 
 static int kraken3_probe(struct hid_device *hdev,
 			 const struct hid_device_id *id)

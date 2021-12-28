@@ -349,8 +349,7 @@ static int grid3_driver_init_assume_locked(struct grid3_data *priv)
 	return 0;
 }
 
-#ifdef CONFIG_PM
-static int grid3_reset_resume(struct hid_device *hdev)
+static int __maybe_unused grid3_reset_resume(struct hid_device *hdev)
 {
 	struct grid3_data *priv = hid_get_drvdata(hdev);
 	int ret;
@@ -364,7 +363,6 @@ static int grid3_reset_resume(struct hid_device *hdev)
 
 	return ret;
 }
-#endif
 
 static int grid3_probe(struct hid_device *hdev, const struct hid_device_id *id)
 {
