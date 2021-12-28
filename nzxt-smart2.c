@@ -710,9 +710,7 @@ static int nzxt_smart2_hid_raw_event(struct hid_device *hdev,
 	return 0;
 }
 
-#ifdef CONFIG_PM
-
-static int nzxt_smart2_hid_reset_resume(struct hid_device *hdev)
+static int __maybe_unused nzxt_smart2_hid_reset_resume(struct hid_device *hdev)
 {
 	struct drvdata *drvdata = hid_get_drvdata(hdev);
 
@@ -728,8 +726,6 @@ static int nzxt_smart2_hid_reset_resume(struct hid_device *hdev)
 
 	return init_device(drvdata, drvdata->update_interval);
 }
-
-#endif
 
 static int nzxt_smart2_hid_probe(struct hid_device *hdev,
 				 const struct hid_device_id *id)
