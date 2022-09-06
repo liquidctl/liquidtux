@@ -16,6 +16,7 @@ USB_IDS = [
   { :vendor => "0x1e71", :product => "0x200d" },
   { :vendor => "0x1e71", :product => "0x2009" },
   { :vendor => "0x1e71", :product => "0x200e" },
+  { :vendor => "0x1e71", :product => "0x200f" },
   { :vendor => "0x1e71", :product => "0x2010" },
 ]
 
