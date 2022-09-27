@@ -232,7 +232,9 @@ static void kraken3_remove(struct hid_device *hdev)
 }
 
 static const struct hid_device_id kraken3_table[] = {
-	{ HID_USB_DEVICE(0x1e71, 0x2007) }, /* NZXT Kraken X53/X63/X73 */
+	/* NZXT Kraken X53/X63/X73 have two possible product IDs */
+	{ HID_USB_DEVICE(0x1e71, 0x2007) },
+	{ HID_USB_DEVICE(0x1e71, 0x2014) },
 	/*
 	 * TODO Add support for NZXT Kraken Z53/Z63/Z73
 	 *
