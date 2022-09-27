@@ -3,6 +3,7 @@
  * hwmon driver for NZXT Kraken X53/X63/X73 coolers
  *
  * Copyright 2021  Jonas Malaco <jonas@protocubo.io>
+ * Copyright 2022  Aleksa Savic <savicaleksa83@gmail.com>
  */
 
 #include <asm/unaligned.h>
@@ -297,4 +298,5 @@ module_exit(kraken3_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jonas Malaco <jonas@protocubo.io>");
+MODULE_AUTHOR("Aleksa Savic <savicaleksa83@gmail.com>");
 MODULE_DESCRIPTION("Hwmon driver for NZXT Kraken X53/X63/X73 coolers");
