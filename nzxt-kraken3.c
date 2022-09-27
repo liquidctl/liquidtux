@@ -15,6 +15,18 @@
 #define STATUS_INTERVAL		1 /* seconds */
 #define STATUS_VALIDITY		(4 * STATUS_INTERVAL) /* seconds */
 
+/* Register offsets for Kraken X53/X63/X73 */
+#define X53_TEMP_SENSOR_START_OFFSET	15
+#define X53_TEMP_SENSOR_END_OFFSET	16
+#define X53_PUMP_SPEED_OFFSET		17
+#define X53_PUMP_DUTY_OFFSET		19
+
+static u8 x53_set_interval_cmd[] = {0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL};
+static u8 x53_finish_init_cmd[] = {0x70, 0x01};
+
+#define X53_SET_INTERVAL_CMD_LENGTH	5
+#define X53_FINISH_INIT_CMD_LENGTH	2
+
 static const char *const kraken3_temp_label[] = {
 	"Coolant temp",
 };
@@ -33,7 +45,6 @@ struct kraken3_priv_data {
 	u16 fan_input[2];
 
 	unsigned long updated; /* jiffies */
-	u8 out[8]; /* DMA output buffer */
 };
 
 static umode_t kraken3_is_visible(const void *data,
@@ -123,50 +134,42 @@ static int kraken3_raw_event(struct hid_device *hdev,
 	if (size < 20 || report->id != STATUS_REPORT_ID)
 		return 0;
 
-	if (data[15] == 0xff && data[16] == 0xff)
+	if (data[X53_TEMP_SENSOR_START_OFFSET] == 0xff && data[X53_TEMP_SENSOR_END_OFFSET] == 0xff)
 		return 0;
 
 	priv = hid_get_drvdata(hdev);
-	priv->temp_input[0] = data[15] * 1000 + data[16] * 100;
-	priv->fan_input[0] = get_unaligned_le16(data + 17);
-	priv->fan_input[1] = data[19];
+
+	/* Temperature and fan sensor readings */
+	priv->temp_input[0] = data[X53_TEMP_SENSOR_START_OFFSET] * 1000 + data[X53_TEMP_SENSOR_END_OFFSET] * 100;
+
+	priv->fan_input[0] = get_unaligned_le16(data + X53_PUMP_SPEED_OFFSET);
+	priv->fan_input[1] = data[X53_PUMP_DUTY_OFFSET];
+
 	priv->updated = jiffies;
 
 	return 0;
 }
 
-/*
- * Caller must ensure exclusive access to buf.
- */
-static int kraken3_init_device(struct hid_device *hdev, u8 *buf)
+static int kraken3_init_device(struct hid_device *hdev)
 {
-	u8 set_interval_cmd[5] = {0x70, 0x02, 0x01, 0xb8, STATUS_INTERVAL};
-	u8 finish_init_cmd[2] = {0x70, 0x01};
-
 	int ret;
 
-	memcpy(buf, set_interval_cmd, 5);
-	ret = hid_hw_output_report(hdev, buf, 5);
+	ret = hid_hw_output_report(hdev, x53_set_interval_cmd, X53_SET_INTERVAL_CMD_LENGTH);
 	if (ret < 0)
 		return ret;
 
-	memcpy(buf, finish_init_cmd, 2);
-	ret = hid_hw_output_report(hdev, buf, 2);
+	ret = hid_hw_output_report(hdev, x53_finish_init_cmd, X53_FINISH_INIT_CMD_LENGTH);
 	if (ret < 0)
 		return ret;
 
 	return 0;
 }
 
-/*
- * Caller must ensure exclusive access to priv->out.
- */
 static int __maybe_unused kraken3_reset_resume(struct hid_device *hdev)
 {
-	struct kraken3_priv_data *priv = hid_get_drvdata(hdev);
 	int ret;
 
-	ret = kraken3_init_device(hdev, priv->out);
+	ret = kraken3_init_device(hdev);
 	if (ret)
 		hid_err(hdev, "req init (reset_resume) failed with %d\n", ret);
 
@@ -214,10 +217,7 @@ static int kraken3_probe(struct hid_device *hdev,
 		goto fail_and_close;
 	}
 
-	/*
-	 * Concurrent access to priv->out is not possible.
-	 */
-	ret = kraken3_init_device(hdev, priv->out);
+	ret = kraken3_init_device(hdev);
 	if (ret) {
 		hid_err(hdev, "device init failed with %d\n", ret);
 		goto fail_and_close;
