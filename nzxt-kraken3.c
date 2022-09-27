@@ -16,18 +16,22 @@
 #define STATUS_VALIDITY		(4 * STATUS_INTERVAL) /* seconds */
 
 static const char *const kraken3_temp_label[] = {
-	"Coolant",
+	"Coolant temp",
 };
 
 static const char *const kraken3_fan_label[] = {
-	"Pump",
+	"Pump speed",
+	"Pump duty [%]"
 };
 
 struct kraken3_priv_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
+
+	/* Sensor values */
 	s32 temp_input[1];
-	u16 fan_input[1];
+	u16 fan_input[2];
+
 	unsigned long updated; /* jiffies */
 	u8 out[8]; /* DMA output buffer */
 };
@@ -36,7 +40,20 @@ static umode_t kraken3_is_visible(const void *data,
 				  enum hwmon_sensor_types type,
 				  u32 attr, int channel)
 {
-	return 0444;
+	switch (type) {
+	case hwmon_temp:
+		if (channel < 1)
+			return 0444;
+		break;
+	case hwmon_fan:
+		if (channel < 2)
+			return 0444;
+		break;
+	default:
+		break;
+	}
+
+	return 0;
 }
 
 static int kraken3_read(struct device *dev, enum hwmon_sensor_types type,
@@ -74,6 +91,7 @@ static int kraken3_read_string(struct device *dev, enum hwmon_sensor_types type,
 	default:
 		return -EOPNOTSUPP;
 	}
+
 	return 0;
 }
 
@@ -87,6 +105,7 @@ static const struct hwmon_channel_info *kraken3_info[] = {
 	HWMON_CHANNEL_INFO(temp,
 			   HWMON_T_INPUT | HWMON_T_LABEL),
 	HWMON_CHANNEL_INFO(fan,
+			   HWMON_F_INPUT | HWMON_F_LABEL,
 			   HWMON_F_INPUT | HWMON_F_LABEL),
 	NULL
 };
@@ -110,6 +129,7 @@ static int kraken3_raw_event(struct hid_device *hdev,
 	priv = hid_get_drvdata(hdev);
 	priv->temp_input[0] = data[15] * 1000 + data[16] * 100;
 	priv->fan_input[0] = get_unaligned_le16(data + 17);
+	priv->fan_input[1] = data[19];
 	priv->updated = jiffies;
 
 	return 0;
