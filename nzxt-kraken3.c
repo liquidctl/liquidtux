@@ -50,7 +50,7 @@ struct kraken3_priv_data {
 	struct hid_device *hdev;
 	struct device *hwmon_dev;
 	struct dentry *debugfs;
-	struct mutex buffer_lock;
+	struct mutex buffer_lock;	/* For locking access to buffer */
 	struct completion wait_completion;
 
 	u8 *buffer;
