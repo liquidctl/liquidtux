@@ -47,7 +47,7 @@ static const char *const kraken3_fan_label[] = {
 };
 
 struct kraken3_priv_data {
-	struct hid_device *hid_dev;
+	struct hid_device *hdev;
 	struct device *hwmon_dev;
 	struct dentry *debugfs;
 	struct mutex buffer_lock;
@@ -189,7 +189,7 @@ static int kraken3_write_expanded(struct kraken3_priv_data *priv, u8 *cmd, int c
 
 	memset(priv->buffer, 0x00, X53_MAX_REPORT_LENGTH);
 	memcpy(priv->buffer, cmd, cmd_length);
-	ret = hid_hw_output_report(priv->hid_dev, priv->buffer, X53_MAX_REPORT_LENGTH);
+	ret = hid_hw_output_report(priv->hdev, priv->buffer, X53_MAX_REPORT_LENGTH);
 
 	mutex_unlock(&priv->buffer_lock);
 	return ret;
@@ -255,7 +255,7 @@ static void kraken3_debugfs_init(struct kraken3_priv_data *priv)
 {
 	char name[64];
 
-	scnprintf(name, sizeof(name), "%s-%s", DRIVER_NAME, dev_name(&priv->hid_dev->dev));
+	scnprintf(name, sizeof(name), "%s-%s", DRIVER_NAME, dev_name(&priv->hdev->dev));
 
 	priv->debugfs = debugfs_create_dir(name, NULL);
 	debugfs_create_file("firmware_version", 0444, priv->debugfs, priv, &firmware_version_fops);
@@ -278,7 +278,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	if (!priv)
 		return -ENOMEM;
 
-	priv->hid_dev = hdev;
+	priv->hdev = hdev;
 	hid_set_drvdata(hdev, priv);
 
 	/*
