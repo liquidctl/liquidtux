@@ -17,8 +17,8 @@
 #define DRIVER_NAME		"kraken3"
 #define STATUS_REPORT_ID	0x75
 #define FIRMWARE_REPORT_ID	0x11
-#define STATUS_INTERVAL		1 /* seconds */
-#define STATUS_VALIDITY		(4 * STATUS_INTERVAL) /* seconds */
+#define STATUS_INTERVAL		1	/* seconds */
+#define STATUS_VALIDITY		(4 * STATUS_INTERVAL)	/* seconds */
 
 /* Register offsets for Kraken X53/X63/X73 */
 #define X53_TEMP_SENSOR_START_OFFSET	15
@@ -27,9 +27,9 @@
 #define X53_PUMP_DUTY_OFFSET		19
 #define X53_FIRMWARE_VERSION_OFFSET	0x11
 
-static u8 x53_set_interval_cmd[] = {0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL};
-static u8 x53_finish_init_cmd[] = {0x70, 0x01};
-static u8 x53_get_fw_version_cmd[] = {0x10, 0x01};
+static u8 x53_set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL };
+static u8 x53_finish_init_cmd[] = { 0x70, 0x01 };
+static u8 x53_get_fw_version_cmd[] = { 0x10, 0x01 };
 
 #define X53_SET_INTERVAL_CMD_LENGTH	5
 #define X53_FINISH_INIT_CMD_LENGTH	2
@@ -61,12 +61,11 @@ struct kraken3_priv_data {
 
 	u8 firmware_version[3];
 
-	unsigned long updated; /* jiffies */
+	unsigned long updated;	/* jiffies */
 };
 
-static umode_t kraken3_is_visible(const void *data,
-				  enum hwmon_sensor_types type,
-				  u32 attr, int channel)
+static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type, u32 attr,
+				  int channel)
 {
 	switch (type) {
 	case hwmon_temp:
@@ -84,8 +83,8 @@ static umode_t kraken3_is_visible(const void *data,
 	return 0;
 }
 
-static int kraken3_read(struct device *dev, enum hwmon_sensor_types type,
-			u32 attr, int channel, long *val)
+static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
+			long *val)
 {
 	struct kraken3_priv_data *priv = dev_get_drvdata(dev);
 
@@ -106,8 +105,8 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type,
 	return 0;
 }
 
-static int kraken3_read_string(struct device *dev, enum hwmon_sensor_types type,
-			       u32 attr, int channel, const char **str)
+static int kraken3_read_string(struct device *dev, enum hwmon_sensor_types type, u32 attr,
+			       int channel, const char **str)
 {
 	switch (type) {
 	case hwmon_temp:
@@ -143,8 +142,8 @@ static const struct hwmon_chip_info kraken3_chip_info = {
 	.info = kraken3_info,
 };
 
-static int kraken3_raw_event(struct hid_device *hdev,
-			     struct hid_report *report, u8 *data, int size)
+static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report, u8 *data,
+			     int size)
 {
 	int i;
 	struct kraken3_priv_data *priv = hid_get_drvdata(hdev);
@@ -152,8 +151,7 @@ static int kraken3_raw_event(struct hid_device *hdev,
 	if (size < X53_MIN_REPORT_LENGTH)
 		return 0;
 
-	if (report->id == FIRMWARE_REPORT_ID)
-	{
+	if (report->id == FIRMWARE_REPORT_ID) {
 		// Read firmware version
 		for (i = 0; i < 3; i++)
 			priv->firmware_version[i] = data[X53_FIRMWARE_VERSION_OFFSET + i];
@@ -169,7 +167,8 @@ static int kraken3_raw_event(struct hid_device *hdev,
 		return 0;
 
 	/* Temperature and fan sensor readings */
-	priv->temp_input[0] = data[X53_TEMP_SENSOR_START_OFFSET] * 1000 + data[X53_TEMP_SENSOR_END_OFFSET] * 100;
+	priv->temp_input[0] =
+	    data[X53_TEMP_SENSOR_START_OFFSET] * 1000 + data[X53_TEMP_SENSOR_END_OFFSET] * 100;
 
 	priv->fan_input[0] = get_unaligned_le16(data + X53_PUMP_SPEED_OFFSET);
 	priv->fan_input[1] = data[X53_PUMP_DUTY_OFFSET];
@@ -238,15 +237,18 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 	if (ret < 0)
 		return -ENODATA;
 
-	/* The response to this request that the device sends is only catchable in kraken3_raw_event(), so we have to wait until it's processed there */
+	/* The response to this request that the device sends is only catchable in
+	 * kraken3_raw_event(), so we have to wait until it's processed there
+	 */
 
-	wait_for_completion(&priv->wait_completion); /* Wait till report 0x11 */
+	wait_for_completion(&priv->wait_completion);	/* Wait till report 0x11 */
 
 	seq_printf(seqf, "%u.%u.%u\n", priv->firmware_version[0], priv->firmware_version[1],
 		   priv->firmware_version[2]);
 
 	return 0;
 }
+
 DEFINE_SHOW_ATTRIBUTE(firmware_version);
 
 static void kraken3_debugfs_init(struct kraken3_priv_data *priv)
@@ -267,8 +269,7 @@ static void kraken3_debugfs_init(struct aqc_data *priv)
 
 #endif
 
-static int kraken3_probe(struct hid_device *hdev,
-			 const struct hid_device_id *id)
+static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id)
 {
 	struct kraken3_priv_data *priv;
 	int ret;
@@ -324,8 +325,7 @@ static int kraken3_probe(struct hid_device *hdev,
 	}
 
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, DRIVER_NAME,
-							  priv, &kraken3_chip_info,
-							  NULL);
+							  priv, &kraken3_chip_info, NULL);
 	if (IS_ERR(priv->hwmon_dev)) {
 		ret = PTR_ERR(priv->hwmon_dev);
 		hid_err(hdev, "hwmon registration failed with %d\n", ret);
