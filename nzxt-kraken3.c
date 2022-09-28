@@ -46,7 +46,7 @@ static const char *const kraken3_fan_label[] = {
 	"Pump duty [%]"
 };
 
-struct kraken3_priv_data {
+struct kraken3_data {
 	struct hid_device *hdev;
 	struct device *hwmon_dev;
 	struct dentry *debugfs;
@@ -86,7 +86,7 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
 			long *val)
 {
-	struct kraken3_priv_data *priv = dev_get_drvdata(dev);
+	struct kraken3_data *priv = dev_get_drvdata(dev);
 
 	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
 		return -ENODATA;
@@ -146,7 +146,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 			     int size)
 {
 	int i;
-	struct kraken3_priv_data *priv = hid_get_drvdata(hdev);
+	struct kraken3_data *priv = hid_get_drvdata(hdev);
 
 	if (size < X53_MIN_REPORT_LENGTH)
 		return 0;
@@ -181,7 +181,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 /* Writes the command to the device with the rest of the report (up to 64 bytes) filled
  * with zeroes
  */
-static int kraken3_write_expanded(struct kraken3_priv_data *priv, u8 *cmd, int cmd_length)
+static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_length)
 {
 	int ret;
 
@@ -198,7 +198,7 @@ static int kraken3_write_expanded(struct kraken3_priv_data *priv, u8 *cmd, int c
 static int kraken3_init_device(struct hid_device *hdev)
 {
 	int ret;
-	struct kraken3_priv_data *priv = hid_get_drvdata(hdev);
+	struct kraken3_data *priv = hid_get_drvdata(hdev);
 
 	/* Set the polling interval */
 	ret = kraken3_write_expanded(priv, x53_set_interval_cmd, X53_SET_INTERVAL_CMD_LENGTH);
@@ -229,7 +229,7 @@ static int __maybe_unused kraken3_reset_resume(struct hid_device *hdev)
 static int firmware_version_show(struct seq_file *seqf, void *unused)
 {
 	int ret;
-	struct kraken3_priv_data *priv = seqf->private;
+	struct kraken3_data *priv = seqf->private;
 
 	reinit_completion(&priv->wait_completion);
 
@@ -250,7 +250,7 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 
 DEFINE_SHOW_ATTRIBUTE(firmware_version);
 
-static void kraken3_debugfs_init(struct kraken3_priv_data *priv)
+static void kraken3_debugfs_init(struct kraken3_data *priv)
 {
 	char name[64];
 
@@ -270,7 +270,7 @@ static void kraken3_debugfs_init(struct aqc_data *priv)
 
 static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id)
 {
-	struct kraken3_priv_data *priv;
+	struct kraken3_data *priv;
 	int ret;
 
 	priv = devm_kzalloc(&hdev->dev, sizeof(*priv), GFP_KERNEL);
@@ -341,7 +341,7 @@ fail_and_stop:
 
 static void kraken3_remove(struct hid_device *hdev)
 {
-	struct kraken3_priv_data *priv = hid_get_drvdata(hdev);
+	struct kraken3_data *priv = hid_get_drvdata(hdev);
 
 	debugfs_remove_recursive(priv->debugfs);
 	hwmon_device_unregister(priv->hwmon_dev);
