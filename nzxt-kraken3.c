@@ -13,6 +13,7 @@
 #include <linux/mutex.h>
 #include <asm/unaligned.h>
 
+#define DRIVER_NAME		"kraken3"
 #define STATUS_REPORT_ID	0x75
 #define STATUS_INTERVAL		1 /* seconds */
 #define STATUS_VALIDITY		(4 * STATUS_INTERVAL) /* seconds */
@@ -257,7 +258,7 @@ static int kraken3_probe(struct hid_device *hdev,
 		goto fail_and_close;
 	}
 
-	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, "kraken3",
+	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, DRIVER_NAME,
 							  priv, &kraken3_chip_info,
 							  NULL);
 	if (IS_ERR(priv->hwmon_dev)) {
