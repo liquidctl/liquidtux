@@ -6,11 +6,11 @@
  * Copyright 2022  Aleksa Savic <savicaleksa83@gmail.com>
  */
 
-#include <asm/unaligned.h>
 #include <linux/hid.h>
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
 #include <linux/module.h>
+#include <asm/unaligned.h>
 
 #define STATUS_REPORT_ID	0x75
 #define STATUS_INTERVAL		1 /* seconds */
