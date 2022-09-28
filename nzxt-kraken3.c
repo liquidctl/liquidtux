@@ -152,7 +152,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 		return 0;
 
 	if (report->id == FIRMWARE_REPORT_ID) {
-		// Read firmware version
+		/* Read firmware version */
 		for (i = 0; i < 3; i++)
 			priv->firmware_version[i] = data[X53_FIRMWARE_VERSION_OFFSET + i];
 		complete(&priv->wait_completion);
@@ -240,8 +240,7 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 	/* The response to this request that the device sends is only catchable in
 	 * kraken3_raw_event(), so we have to wait until it's processed there
 	 */
-
-	wait_for_completion(&priv->wait_completion);	/* Wait till report 0x11 */
+	wait_for_completion(&priv->wait_completion);
 
 	seq_printf(seqf, "%u.%u.%u\n", priv->firmware_version[0], priv->firmware_version[1],
 		   priv->firmware_version[2]);
@@ -281,8 +280,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	priv->hdev = hdev;
 	hid_set_drvdata(hdev, priv);
 
-	/*
-	 * Initialize ->updated to STATUS_VALIDITY seconds in the past, making
+	/* Initialize ->updated to STATUS_VALIDITY seconds in the past, making
 	 * the initial empty data invalid for kraken3_read without the need for
 	 * a special case there.
 	 */
@@ -294,9 +292,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 		return ret;
 	}
 
-	/*
-	 * Enable hidraw so existing user-space tools can continue to work.
-	 */
+	/* Enable hidraw so existing user-space tools can continue to work */
 	ret = hid_hw_start(hdev, HID_CONNECT_HIDRAW);
 	if (ret) {
 		hid_err(hdev, "hid hw start failed with %d\n", ret);
@@ -392,9 +388,7 @@ static void __exit kraken3_exit(void)
 	hid_unregister_driver(&kraken3_driver);
 }
 
-/*
- * When compiled into the kernel, initialize after the hid bus.
- */
+/* When compiled into the kernel, initialize after the HID bus */
 late_initcall(kraken3_init);
 module_exit(kraken3_exit);
 
