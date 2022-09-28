@@ -10,6 +10,7 @@
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <asm/unaligned.h>
 
 #define STATUS_REPORT_ID	0x75
@@ -27,6 +28,7 @@ static u8 x53_finish_init_cmd[] = {0x70, 0x01};
 
 #define X53_SET_INTERVAL_CMD_LENGTH	5
 #define X53_FINISH_INIT_CMD_LENGTH	2
+#define X53_MAX_REPORT_LENGTH		64
 
 static const char *const kraken3_temp_label[] = {
 	"Coolant temp",
@@ -40,6 +42,9 @@ static const char *const kraken3_fan_label[] = {
 struct kraken3_priv_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
+	struct mutex buffer_lock;
+
+	u8 *buffer;
 
 	/* Sensor values */
 	s32 temp_input[1];
@@ -151,15 +156,35 @@ static int kraken3_raw_event(struct hid_device *hdev,
 	return 0;
 }
 
-static int kraken3_init_device(struct hid_device *hdev)
+/* Writes the command to the device with the rest of the report (up to 64 bytes) filled
+ * with zeroes
+ */
+static int kraken3_write_expanded(struct kraken3_priv_data *priv, u8 *cmd, int cmd_length)
 {
 	int ret;
 
-	ret = hid_hw_output_report(hdev, x53_set_interval_cmd, X53_SET_INTERVAL_CMD_LENGTH);
+	mutex_lock(&priv->buffer_lock);
+
+	memset(priv->buffer, 0x00, X53_MAX_REPORT_LENGTH);
+	memcpy(priv->buffer, cmd, cmd_length);
+	ret = hid_hw_output_report(priv->hid_dev, priv->buffer, X53_MAX_REPORT_LENGTH);
+
+	mutex_unlock(&priv->buffer_lock);
+	return ret;
+}
+
+static int kraken3_init_device(struct hid_device *hdev)
+{
+	int ret;
+	struct kraken3_priv_data *priv = hid_get_drvdata(hdev);
+
+	/* Set the polling interval */
+	ret = kraken3_write_expanded(priv, x53_set_interval_cmd, X53_SET_INTERVAL_CMD_LENGTH);
 	if (ret < 0)
 		return ret;
 
-	ret = hid_hw_output_report(hdev, x53_finish_init_cmd, X53_FINISH_INIT_CMD_LENGTH);
+	/* Finalize the init process */
+	ret = kraken3_write_expanded(priv, x53_finish_init_cmd, X53_FINISH_INIT_CMD_LENGTH);
 	if (ret < 0)
 		return ret;
 
@@ -217,6 +242,14 @@ static int kraken3_probe(struct hid_device *hdev,
 		hid_err(hdev, "hid hw open failed with %d\n", ret);
 		goto fail_and_close;
 	}
+
+	priv->buffer = devm_kzalloc(&hdev->dev, X53_MAX_REPORT_LENGTH, GFP_KERNEL);
+	if (!priv->buffer) {
+		ret = -ENOMEM;
+		goto fail_and_close;
+	}
+
+	mutex_init(&priv->buffer_lock);
 
 	ret = kraken3_init_device(hdev);
 	if (ret) {
