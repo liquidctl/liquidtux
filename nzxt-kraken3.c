@@ -6,6 +6,7 @@
  * Copyright 2022  Aleksa Savic <savicaleksa83@gmail.com>
  */
 
+#include <linux/debugfs.h>
 #include <linux/hid.h>
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
@@ -15,6 +16,7 @@
 
 #define DRIVER_NAME		"kraken3"
 #define STATUS_REPORT_ID	0x75
+#define FIRMWARE_REPORT_ID	0x11
 #define STATUS_INTERVAL		1 /* seconds */
 #define STATUS_VALIDITY		(4 * STATUS_INTERVAL) /* seconds */
 
@@ -23,13 +25,17 @@
 #define X53_TEMP_SENSOR_END_OFFSET	16
 #define X53_PUMP_SPEED_OFFSET		17
 #define X53_PUMP_DUTY_OFFSET		19
+#define X53_FIRMWARE_VERSION_OFFSET	0x11
 
 static u8 x53_set_interval_cmd[] = {0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL};
 static u8 x53_finish_init_cmd[] = {0x70, 0x01};
+static u8 x53_get_fw_version_cmd[] = {0x10, 0x01};
 
 #define X53_SET_INTERVAL_CMD_LENGTH	5
 #define X53_FINISH_INIT_CMD_LENGTH	2
+#define X53_GET_FW_VERSION_CMD_LENGTH	2
 #define X53_MAX_REPORT_LENGTH		64
+#define X53_MIN_REPORT_LENGTH		20
 
 static const char *const kraken3_temp_label[] = {
 	"Coolant temp",
@@ -43,13 +49,17 @@ static const char *const kraken3_fan_label[] = {
 struct kraken3_priv_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
+	struct dentry *debugfs;
 	struct mutex buffer_lock;
+	struct completion wait_completion;
 
 	u8 *buffer;
 
 	/* Sensor values */
 	s32 temp_input[1];
 	u16 fan_input[2];
+
+	u8 firmware_version[3];
 
 	unsigned long updated; /* jiffies */
 };
@@ -136,15 +146,27 @@ static const struct hwmon_chip_info kraken3_chip_info = {
 static int kraken3_raw_event(struct hid_device *hdev,
 			     struct hid_report *report, u8 *data, int size)
 {
-	struct kraken3_priv_data *priv;
+	int i;
+	struct kraken3_priv_data *priv = hid_get_drvdata(hdev);
 
-	if (size < 20 || report->id != STATUS_REPORT_ID)
+	if (size < X53_MIN_REPORT_LENGTH)
 		return 0;
 
+	if (report->id == FIRMWARE_REPORT_ID)
+	{
+		// Read firmware version
+		for (i = 0; i < 3; i++)
+			priv->firmware_version[i] = data[X53_FIRMWARE_VERSION_OFFSET + i];
+		complete(&priv->wait_completion);
+		return 0;
+	}
+
+	if (report->id != STATUS_REPORT_ID)
+		return 0;
+
+	/* Firmware/device is possibly damaged */
 	if (data[X53_TEMP_SENSOR_START_OFFSET] == 0xff && data[X53_TEMP_SENSOR_END_OFFSET] == 0xff)
 		return 0;
-
-	priv = hid_get_drvdata(hdev);
 
 	/* Temperature and fan sensor readings */
 	priv->temp_input[0] = data[X53_TEMP_SENSOR_START_OFFSET] * 1000 + data[X53_TEMP_SENSOR_END_OFFSET] * 100;
@@ -203,6 +225,48 @@ static int __maybe_unused kraken3_reset_resume(struct hid_device *hdev)
 	return ret;
 }
 
+#ifdef CONFIG_DEBUG_FS
+
+static int firmware_version_show(struct seq_file *seqf, void *unused)
+{
+	int ret;
+	struct kraken3_priv_data *priv = seqf->private;
+
+	reinit_completion(&priv->wait_completion);
+
+	ret = kraken3_write_expanded(priv, x53_get_fw_version_cmd, X53_GET_FW_VERSION_CMD_LENGTH);
+	if (ret < 0)
+		return -ENODATA;
+
+	/* The response to this request that the device sends is only catchable in kraken3_raw_event(), so we have to wait until it's processed there */
+
+	wait_for_completion(&priv->wait_completion); /* Wait till report 0x11 */
+
+	seq_printf(seqf, "%u.%u.%u\n", priv->firmware_version[0], priv->firmware_version[1],
+		   priv->firmware_version[2]);
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(firmware_version);
+
+static void kraken3_debugfs_init(struct kraken3_priv_data *priv)
+{
+	char name[64];
+
+	scnprintf(name, sizeof(name), "%s-%s", DRIVER_NAME, dev_name(&priv->hid_dev->dev));
+
+	priv->debugfs = debugfs_create_dir(name, NULL);
+	debugfs_create_file("firmware_version", 0444, priv->debugfs, priv, &firmware_version_fops);
+}
+
+#else
+
+static void kraken3_debugfs_init(struct aqc_data *priv)
+{
+}
+
+#endif
+
 static int kraken3_probe(struct hid_device *hdev,
 			 const struct hid_device_id *id)
 {
@@ -251,6 +315,7 @@ static int kraken3_probe(struct hid_device *hdev,
 	}
 
 	mutex_init(&priv->buffer_lock);
+	init_completion(&priv->wait_completion);
 
 	ret = kraken3_init_device(hdev);
 	if (ret) {
@@ -267,6 +332,8 @@ static int kraken3_probe(struct hid_device *hdev,
 		goto fail_and_close;
 	}
 
+	kraken3_debugfs_init(priv);
+
 	return 0;
 
 fail_and_close:
@@ -280,6 +347,7 @@ static void kraken3_remove(struct hid_device *hdev)
 {
 	struct kraken3_priv_data *priv = hid_get_drvdata(hdev);
 
+	debugfs_remove_recursive(priv->debugfs);
 	hwmon_device_unregister(priv->hwmon_dev);
 
 	hid_hw_close(hdev);
