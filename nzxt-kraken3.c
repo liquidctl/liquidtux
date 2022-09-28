@@ -14,7 +14,7 @@
 #include <linux/mutex.h>
 #include <asm/unaligned.h>
 
-#define DRIVER_NAME		"kraken3"
+#define DRIVER_NAME		"nzxt-kraken3"
 #define STATUS_REPORT_ID	0x75
 #define FIRMWARE_REPORT_ID	0x11
 #define STATUS_INTERVAL		1	/* seconds */
@@ -372,7 +372,7 @@ static const struct hid_device_id kraken3_table[] = {
 MODULE_DEVICE_TABLE(hid, kraken3_table);
 
 static struct hid_driver kraken3_driver = {
-	.name = "nzxt-kraken3",
+	.name = DRIVER_NAME,
 	.id_table = kraken3_table,
 	.probe = kraken3_probe,
 	.remove = kraken3_remove,
