@@ -51,7 +51,7 @@ struct kraken3_data {
 	struct device *hwmon_dev;
 	struct dentry *debugfs;
 	struct mutex buffer_lock;	/* For locking access to buffer */
-	struct completion wait_completion;
+	struct completion fw_version_processed;
 
 	u8 *buffer;
 
@@ -155,7 +155,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 		/* Read firmware version */
 		for (i = 0; i < 3; i++)
 			priv->firmware_version[i] = data[X53_FIRMWARE_VERSION_OFFSET + i];
-		complete(&priv->wait_completion);
+		complete(&priv->fw_version_processed);
 		return 0;
 	}
 
@@ -231,7 +231,7 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 	int ret;
 	struct kraken3_data *priv = seqf->private;
 
-	reinit_completion(&priv->wait_completion);
+	reinit_completion(&priv->fw_version_processed);
 
 	ret = kraken3_write_expanded(priv, x53_get_fw_version_cmd, X53_GET_FW_VERSION_CMD_LENGTH);
 	if (ret < 0)
@@ -240,7 +240,7 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 	/* The response to this request that the device sends is only catchable in
 	 * kraken3_raw_event(), so we have to wait until it's processed there
 	 */
-	wait_for_completion(&priv->wait_completion);
+	wait_for_completion(&priv->fw_version_processed);
 
 	seq_printf(seqf, "%u.%u.%u\n", priv->firmware_version[0], priv->firmware_version[1],
 		   priv->firmware_version[2]);
@@ -312,7 +312,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	}
 
 	mutex_init(&priv->buffer_lock);
-	init_completion(&priv->wait_completion);
+	init_completion(&priv->fw_version_processed);
 
 	ret = kraken3_init_device(hdev);
 	if (ret) {
