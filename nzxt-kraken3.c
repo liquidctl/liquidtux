@@ -172,7 +172,7 @@ static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_le
 static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
 			 long val)
 {
-	int ret, percent_value;
+	int ret, percent_value, i;
 	u8 fixed_duty_cmd[X53_SET_PUMP_DUTY_CMD_LENGTH];
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
@@ -195,7 +195,7 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 		fixed_duty_cmd[X53_SET_PUMP_DUTY_ID_OFFSET] = X53_SET_PUMP_DUTY_ID;
 
 		/* Fill the rest of the command with the fixed value we're setting */
-		for (int i = X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH;
+		for (i = X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH;
 		     i < X53_SET_PUMP_DUTY_CMD_LENGTH - 1; i++)
 			fixed_duty_cmd[i] = percent_value;
 
