@@ -44,7 +44,8 @@ static u8 x53_set_pump_duty_cmd_header[] = { 0x72, 0x00, 0x00, 0x00 };
 #define X53_MAX_REPORT_LENGTH			64
 #define X53_MIN_REPORT_LENGTH			20
 #define X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH	4
-#define X53_SET_PUMP_DUTY_CMD_LENGTH		(4 + 40) /* 4 byte header and 40 duty offsets for temps from 20C to 59C */
+/* 4 byte header and 40 duty offsets for temps from 20C to 59C */
+#define X53_SET_PUMP_DUTY_CMD_LENGTH		(4 + 40)
 
 static const char *const kraken3_temp_label[] = {
 	"Coolant temp",
