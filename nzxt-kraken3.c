@@ -338,7 +338,7 @@ static void kraken3_debugfs_init(struct kraken3_data *priv)
 
 #else
 
-static void kraken3_debugfs_init(struct aqc_data *priv)
+static void kraken3_debugfs_init(struct kraken3_data *priv)
 {
 }
 
