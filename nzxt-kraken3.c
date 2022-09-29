@@ -27,15 +27,24 @@
 #define X53_PUMP_DUTY_OFFSET		19
 #define X53_FIRMWARE_VERSION_OFFSET	0x11
 
+/* Control commands for Kraken X53/X63/X73 */
+#define X53_SET_PUMP_DUTY_ID_OFFSET	0x01
+#define X53_SET_PUMP_DUTY_ID		0x01
+#define X53_SET_PUMP_DUTY_MIN		20	/* In percent */
+#define X53_SET_PUMP_DUTY_MAX		100	/* In percent */
+
 static u8 x53_set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL };
 static u8 x53_finish_init_cmd[] = { 0x70, 0x01 };
 static u8 x53_get_fw_version_cmd[] = { 0x10, 0x01 };
+static u8 x53_set_pump_duty_cmd_header[] = { 0x72, 0x00, 0x00, 0x00 };
 
-#define X53_SET_INTERVAL_CMD_LENGTH	5
-#define X53_FINISH_INIT_CMD_LENGTH	2
-#define X53_GET_FW_VERSION_CMD_LENGTH	2
-#define X53_MAX_REPORT_LENGTH		64
-#define X53_MIN_REPORT_LENGTH		20
+#define X53_SET_INTERVAL_CMD_LENGTH		5
+#define X53_FINISH_INIT_CMD_LENGTH		2
+#define X53_GET_FW_VERSION_CMD_LENGTH		2
+#define X53_MAX_REPORT_LENGTH			64
+#define X53_MIN_REPORT_LENGTH			20
+#define X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH	4
+#define X53_SET_PUMP_DUTY_CMD_LENGTH		(4 + 40) /* 4 byte header and 40 duty offsets for temps from 20C to 59C */
 
 static const char *const kraken3_temp_label[] = {
 	"Coolant temp",
@@ -76,6 +85,10 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 		if (channel < 2)
 			return 0444;
 		break;
+	case hwmon_pwm:
+		if (channel < 1)
+			return 0644;
+		break;
 	default:
 		break;
 	}
@@ -98,6 +111,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 	case hwmon_fan:
 		*val = priv->fan_input[channel];
 		break;
+	case hwmon_pwm:
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -122,10 +136,87 @@ static int kraken3_read_string(struct device *dev, enum hwmon_sensor_types type,
 	return 0;
 }
 
+static int kraken3_pwm_to_percent(long val)
+{
+	int percent_value;
+
+	if (val < 0 || val > 255)
+		return -EINVAL;
+
+	percent_value = DIV_ROUND_CLOSEST(val * 100, 255);
+
+	if (percent_value < X53_SET_PUMP_DUTY_MIN || percent_value > X53_SET_PUMP_DUTY_MAX)
+		return -EINVAL;
+
+	return percent_value;
+}
+
+/* Writes the command to the device with the rest of the report (up to 64 bytes) filled
+ * with zeroes
+ */
+static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_length)
+{
+	int ret;
+
+	mutex_lock(&priv->buffer_lock);
+
+	memset(priv->buffer, 0x00, X53_MAX_REPORT_LENGTH);
+	memcpy(priv->buffer, cmd, cmd_length);
+	ret = hid_hw_output_report(priv->hdev, priv->buffer, X53_MAX_REPORT_LENGTH);
+
+	mutex_unlock(&priv->buffer_lock);
+	return ret;
+}
+
+static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
+			 long val)
+{
+	int ret, percent_value;
+	u8 fixed_duty_cmd[X53_SET_PUMP_DUTY_CMD_LENGTH];
+	struct kraken3_data *priv = dev_get_drvdata(dev);
+
+	switch (type) {
+	case hwmon_pwm:
+		percent_value = kraken3_pwm_to_percent(val);
+		if (percent_value < 0)
+			return percent_value;
+
+		/* The devices can only control the pump duty through a curve. Since we're setting
+		 * a fixed duty here, fill the whole curve (ranging from 20C to 59C, which is the
+		 * critical liquid temp) with the same duty
+		 */
+
+		/* Copy command header */
+		memcpy(fixed_duty_cmd, x53_set_pump_duty_cmd_header,
+		       X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH);
+
+		/* Set the correct ID for writing pump duty */
+		fixed_duty_cmd[X53_SET_PUMP_DUTY_ID_OFFSET] = X53_SET_PUMP_DUTY_ID;
+
+		/* Fill the rest of the command with the fixed value we're setting */
+		for (int i = X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH;
+		     i < X53_SET_PUMP_DUTY_CMD_LENGTH - 1; i++)
+			fixed_duty_cmd[i] = percent_value;
+
+		/* Force the pump duty to 100% when above critical temp */
+		fixed_duty_cmd[X53_SET_PUMP_DUTY_CMD_LENGTH - 1] = 100;
+
+		ret = kraken3_write_expanded(priv, fixed_duty_cmd, X53_SET_PUMP_DUTY_CMD_LENGTH);
+		if (ret < 0)
+			return ret;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 static const struct hwmon_ops kraken3_hwmon_ops = {
 	.is_visible = kraken3_is_visible,
 	.read = kraken3_read,
 	.read_string = kraken3_read_string,
+	.write = kraken3_write
 };
 
 static const struct hwmon_channel_info *kraken3_info[] = {
@@ -134,6 +225,8 @@ static const struct hwmon_channel_info *kraken3_info[] = {
 	HWMON_CHANNEL_INFO(fan,
 			   HWMON_F_INPUT | HWMON_F_LABEL,
 			   HWMON_F_INPUT | HWMON_F_LABEL),
+	HWMON_CHANNEL_INFO(pwm,
+			   HWMON_PWM_INPUT),
 	NULL
 };
 
@@ -176,23 +269,6 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	priv->updated = jiffies;
 
 	return 0;
-}
-
-/* Writes the command to the device with the rest of the report (up to 64 bytes) filled
- * with zeroes
- */
-static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_length)
-{
-	int ret;
-
-	mutex_lock(&priv->buffer_lock);
-
-	memset(priv->buffer, 0x00, X53_MAX_REPORT_LENGTH);
-	memcpy(priv->buffer, cmd, cmd_length);
-	ret = hid_hw_output_report(priv->hdev, priv->buffer, X53_MAX_REPORT_LENGTH);
-
-	mutex_unlock(&priv->buffer_lock);
-	return ret;
 }
 
 static int kraken3_init_device(struct hid_device *hdev)
