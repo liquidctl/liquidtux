@@ -23,6 +23,11 @@
 
 enum kinds { x53, z53 };
 
+static const char *const kraken3_device_names[] = {
+	[x53] = "x53",
+	[z53] = "z53",
+};
+
 #define DRIVER_NAME		"nzxt_kraken3"
 #define STATUS_REPORT_ID	0x75
 #define FIRMWARE_REPORT_ID	0x11
@@ -78,6 +83,7 @@ struct kraken3_data {
 	struct completion z53_status_processed;
 
 	enum kinds kind;
+	const char *name;
 
 	u8 *buffer;
 
@@ -133,11 +139,11 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 	case hwmon_pwm:
 		switch (priv->kind) {
 		case x53:
-			if (channel < 1) /* Just the pump */
+			if (channel < 1)	/* Just the pump */
 				return 0644;
 			break;
 		case z53:
-			if (channel < 2) /* Pump and fan speed */
+			if (channel < 2)	/* Pump and fan speed */
 				return 0644;
 			break;
 		default:
@@ -158,8 +164,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
 	/* Request on demand */
-	if (priv->kind == z53)
-	{
+	if (priv->kind == z53) {
 		/* Send command for getting status */
 		ret = kraken3_write_expanded(priv, z53_get_status_cmd, Z53_GET_STATUS_CMD_LENGTH);
 		if (ret < 0)
@@ -319,8 +324,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	priv->fan_input[0] = get_unaligned_le16(data + X53_PUMP_SPEED_OFFSET);
 	priv->fan_input[1] = data[X53_PUMP_DUTY_OFFSET];
 
-	if (priv->kind == z53)
-	{
+	if (priv->kind == z53) {
 		priv->fan_input[2] = get_unaligned_le16(data + 23);
 		priv->fan_input[3] = data[25];
 
@@ -391,7 +395,8 @@ static void kraken3_debugfs_init(struct kraken3_data *priv)
 {
 	char name[64];
 
-	scnprintf(name, sizeof(name), "%s-%s", DRIVER_NAME, dev_name(&priv->hdev->dev));
+	scnprintf(name, sizeof(name), "%s_%s-%s", DRIVER_NAME, priv->name,
+		  dev_name(&priv->hdev->dev));
 
 	priv->debugfs = debugfs_create_dir(name, NULL);
 	debugfs_create_file("firmware_version", 0444, priv->debugfs, priv, &firmware_version_fops);
@@ -454,6 +459,8 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 		break;
 	}
 
+	priv->name = kraken3_device_names[priv->kind];
+
 	priv->buffer = devm_kzalloc(&hdev->dev, X53_MAX_REPORT_LENGTH, GFP_KERNEL);
 	if (!priv->buffer) {
 		ret = -ENOMEM;
@@ -470,7 +477,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 		goto fail_and_close;
 	}
 
-	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, DRIVER_NAME,
+	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, priv->name,
 							  priv, &kraken3_chip_info, NULL);
 	if (IS_ERR(priv->hwmon_dev)) {
 		ret = PTR_ERR(priv->hwmon_dev);
@@ -538,4 +545,4 @@ module_exit(kraken3_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jonas Malaco <jonas@protocubo.io>");
 MODULE_AUTHOR("Aleksa Savic <savicaleksa83@gmail.com>");
-MODULE_DESCRIPTION("Hwmon driver for NZXT Kraken X53/X63/X73 coolers");
+MODULE_DESCRIPTION("Hwmon driver for NZXT Kraken X53/X63/X73, Z53/Z63/Z73 coolers");
