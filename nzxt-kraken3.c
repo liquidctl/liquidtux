@@ -19,6 +19,8 @@
 #define USB_PRODUCT_ID_X53_SECOND	0x2014
 #define USB_PRODUCT_ID_Z53		0x3008
 
+enum kinds { x53, z53 };
+
 #define DRIVER_NAME		"nzxt-kraken3"
 #define STATUS_REPORT_ID	0x75
 #define FIRMWARE_REPORT_ID	0x11
@@ -58,7 +60,9 @@ static const char *const kraken3_temp_label[] = {
 
 static const char *const kraken3_fan_label[] = {
 	"Pump speed",
-	"Pump duty [%]"
+	"Pump duty [%]",
+	"Fan speed",
+	"Fan duty [%]"
 };
 
 struct kraken3_data {
@@ -68,11 +72,13 @@ struct kraken3_data {
 	struct mutex buffer_lock;	/* For locking access to buffer */
 	struct completion fw_version_processed;
 
+	enum kinds kind;
+
 	u8 *buffer;
 
 	/* Sensor values */
 	s32 temp_input[1];
-	u16 fan_input[2];
+	u16 fan_input[4];
 
 	u8 firmware_version[3];
 
@@ -230,6 +236,8 @@ static const struct hwmon_channel_info *kraken3_info[] = {
 			   HWMON_T_INPUT | HWMON_T_LABEL),
 	HWMON_CHANNEL_INFO(fan,
 			   HWMON_F_INPUT | HWMON_F_LABEL,
+			   HWMON_F_INPUT | HWMON_F_LABEL,
+			   HWMON_F_INPUT | HWMON_F_LABEL,
 			   HWMON_F_INPUT | HWMON_F_LABEL),
 	HWMON_CHANNEL_INFO(pwm,
 			   HWMON_PWM_INPUT),
@@ -385,6 +393,18 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	if (ret) {
 		hid_err(hdev, "hid hw open failed with %d\n", ret);
 		goto fail_and_close;
+	}
+
+	switch (hdev->product) {
+	case USB_PRODUCT_ID_X53:
+	case USB_PRODUCT_ID_X53_SECOND:
+		priv->kind = x53;
+		break;
+	case USB_PRODUCT_ID_Z53:
+		priv->kind = z53;
+		break;
+	default:
+		break;
 	}
 
 	priv->buffer = devm_kzalloc(&hdev->dev, X53_MAX_REPORT_LENGTH, GFP_KERNEL);
