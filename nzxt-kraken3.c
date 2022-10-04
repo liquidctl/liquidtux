@@ -21,7 +21,7 @@
 
 enum kinds { x53, z53 };
 
-#define DRIVER_NAME		"nzxt-kraken3"
+#define DRIVER_NAME		"nzxt_kraken3"
 #define STATUS_REPORT_ID	0x75
 #define FIRMWARE_REPORT_ID	0x11
 #define STATUS_INTERVAL		1	/* seconds */
@@ -44,6 +44,7 @@ static u8 x53_set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL };
 static u8 x53_finish_init_cmd[] = { 0x70, 0x01 };
 static u8 x53_get_fw_version_cmd[] = { 0x10, 0x01 };
 static u8 x53_set_pump_duty_cmd_header[] = { 0x72, 0x00, 0x00, 0x00 };
+static u8 z53_get_status_cmd[] = { 0x74, 0x01 };
 
 #define X53_SET_INTERVAL_CMD_LENGTH		5
 #define X53_FINISH_INIT_CMD_LENGTH		2
@@ -53,6 +54,7 @@ static u8 x53_set_pump_duty_cmd_header[] = { 0x72, 0x00, 0x00, 0x00 };
 #define X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH	4
 /* 4 byte header and 40 duty offsets for temps from 20C to 59C */
 #define X53_SET_PUMP_DUTY_CMD_LENGTH		(4 + 40)
+#define Z53_GET_STATUS_CMD_LENGTH		2
 
 static const char *const kraken3_temp_label[] = {
 	"Coolant temp",
@@ -71,6 +73,7 @@ struct kraken3_data {
 	struct dentry *debugfs;
 	struct mutex buffer_lock;	/* For locking access to buffer */
 	struct completion fw_version_processed;
+	struct completion z53_status_processed;
 
 	enum kinds kind;
 
@@ -85,21 +88,59 @@ struct kraken3_data {
 	unsigned long updated;	/* jiffies */
 };
 
+/* Writes the command to the device with the rest of the report (up to 64 bytes) filled
+ * with zeroes
+ */
+static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_length)
+{
+	int ret;
+
+	mutex_lock(&priv->buffer_lock);
+
+	memset(priv->buffer, 0x00, X53_MAX_REPORT_LENGTH);
+	memcpy(priv->buffer, cmd, cmd_length);
+	ret = hid_hw_output_report(priv->hdev, priv->buffer, X53_MAX_REPORT_LENGTH);
+
+	mutex_unlock(&priv->buffer_lock);
+	return ret;
+}
+
 static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type, u32 attr,
 				  int channel)
 {
+	const struct kraken3_data *priv = data;
+
 	switch (type) {
 	case hwmon_temp:
 		if (channel < 1)
 			return 0444;
 		break;
 	case hwmon_fan:
-		if (channel < 2)
-			return 0444;
+		switch (priv->kind) {
+		case x53:
+			if (channel < 2)
+				return 0444;
+			break;
+		case z53:
+			if (channel < 4)
+				return 0444;
+		default:
+			break;
+		}
 		break;
 	case hwmon_pwm:
-		if (channel < 1)
-			return 0644;
+		switch (priv->kind) {
+		case x53:
+			if (channel < 1) /* Just the pump */
+				return 0644;
+			break;
+		case z53:
+			if (channel < 2) /* Pump and fan speed */
+				return 0644;
+			break;
+		default:
+			break;
+		}
 		break;
 	default:
 		break;
@@ -111,7 +152,19 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
 			long *val)
 {
+	int ret;
 	struct kraken3_data *priv = dev_get_drvdata(dev);
+
+	/* Request on demand */
+	if (priv->kind == z53)
+	{
+		/* Send command for getting status */
+		ret = kraken3_write_expanded(priv, z53_get_status_cmd, Z53_GET_STATUS_CMD_LENGTH);
+		if (ret < 0)
+			return ret;
+
+		wait_for_completion(&priv->z53_status_processed);
+	}
 
 	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
 		return -ENODATA;
@@ -161,23 +214,6 @@ static int kraken3_pwm_to_percent(long val)
 		return -EINVAL;
 
 	return percent_value;
-}
-
-/* Writes the command to the device with the rest of the report (up to 64 bytes) filled
- * with zeroes
- */
-static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_length)
-{
-	int ret;
-
-	mutex_lock(&priv->buffer_lock);
-
-	memset(priv->buffer, 0x00, X53_MAX_REPORT_LENGTH);
-	memcpy(priv->buffer, cmd, cmd_length);
-	ret = hid_hw_output_report(priv->hdev, priv->buffer, X53_MAX_REPORT_LENGTH);
-
-	mutex_unlock(&priv->buffer_lock);
-	return ret;
 }
 
 static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
@@ -240,6 +276,7 @@ static const struct hwmon_channel_info *kraken3_info[] = {
 			   HWMON_F_INPUT | HWMON_F_LABEL,
 			   HWMON_F_INPUT | HWMON_F_LABEL),
 	HWMON_CHANNEL_INFO(pwm,
+			   HWMON_PWM_INPUT,
 			   HWMON_PWM_INPUT),
 	NULL
 };
@@ -279,6 +316,14 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 
 	priv->fan_input[0] = get_unaligned_le16(data + X53_PUMP_SPEED_OFFSET);
 	priv->fan_input[1] = data[X53_PUMP_DUTY_OFFSET];
+
+	if (priv->kind == z53)
+	{
+		priv->fan_input[2] = get_unaligned_le16(data + 23);
+		priv->fan_input[3] = data[25];
+
+		complete(&priv->z53_status_processed);
+	}
 
 	priv->updated = jiffies;
 
@@ -415,6 +460,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 
 	mutex_init(&priv->buffer_lock);
 	init_completion(&priv->fw_version_processed);
+	init_completion(&priv->z53_status_processed);
 
 	ret = kraken3_init_device(hdev);
 	if (ret) {
