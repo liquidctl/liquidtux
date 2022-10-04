@@ -34,14 +34,17 @@ static const char *const kraken3_device_names[] = {
 #define STATUS_INTERVAL		1	/* seconds */
 #define STATUS_VALIDITY		(4 * STATUS_INTERVAL)	/* seconds */
 
-/* Register offsets for Kraken X53/X63/X73 */
+/* Register offsets for Kraken X53 and Z53 */
 #define X53_TEMP_SENSOR_START_OFFSET	15
 #define X53_TEMP_SENSOR_END_OFFSET	16
 #define X53_PUMP_SPEED_OFFSET		17
 #define X53_PUMP_DUTY_OFFSET		19
 #define X53_FIRMWARE_VERSION_OFFSET	0x11
 
-/* Control commands for Kraken X53/X63/X73 */
+#define Z53_FAN_SPEED_OFFSET		23
+#define Z53_FAN_DUTY_OFFSET		25
+
+/* Control commands for Kraken X53 and Z53*/
 #define X53_SET_PUMP_DUTY_ID_OFFSET	0x01
 #define X53_SET_PUMP_DUTY_ID		0x01
 #define X53_SET_PUMP_DUTY_MIN		20	/* In percent */
@@ -325,8 +328,8 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	priv->fan_input[1] = data[X53_PUMP_DUTY_OFFSET];
 
 	if (priv->kind == z53) {
-		priv->fan_input[2] = get_unaligned_le16(data + 23);
-		priv->fan_input[3] = data[25];
+		priv->fan_input[2] = get_unaligned_le16(data + Z53_FAN_SPEED_OFFSET);
+		priv->fan_input[3] = data[Z53_FAN_DUTY_OFFSET];
 
 		complete(&priv->z53_status_processed);
 	}
