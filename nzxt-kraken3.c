@@ -168,6 +168,8 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 
 	/* Request on demand */
 	if (priv->kind == z53) {
+		reinit_completion(&priv->z53_status_processed);
+
 		/* Send command for getting status */
 		ret = kraken3_write_expanded(priv, z53_get_status_cmd, Z53_GET_STATUS_CMD_LENGTH);
 		if (ret < 0)
