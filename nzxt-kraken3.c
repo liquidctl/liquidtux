@@ -104,23 +104,6 @@ struct kraken3_data {
 	unsigned long updated;	/* jiffies */
 };
 
-/* Writes the command to the device with the rest of the report (up to 64 bytes) filled
- * with zeroes
- */
-static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_length)
-{
-	int ret;
-
-	mutex_lock(&priv->buffer_lock);
-
-	memset(priv->buffer, 0x00, X53_MAX_REPORT_LENGTH);
-	memcpy(priv->buffer, cmd, cmd_length);
-	ret = hid_hw_output_report(priv->hdev, priv->buffer, X53_MAX_REPORT_LENGTH);
-
-	mutex_unlock(&priv->buffer_lock);
-	return ret;
-}
-
 static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type, u32 attr,
 				  int channel)
 {
@@ -163,6 +146,23 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 	}
 
 	return 0;
+}
+
+/* Writes the command to the device with the rest of the report (up to 64 bytes) filled
+ * with zeroes
+ */
+static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_length)
+{
+	int ret;
+
+	mutex_lock(&priv->buffer_lock);
+
+	memset(priv->buffer, 0x00, X53_MAX_REPORT_LENGTH);
+	memcpy(priv->buffer, cmd, cmd_length);
+	ret = hid_hw_output_report(priv->hdev, priv->buffer, X53_MAX_REPORT_LENGTH);
+
+	mutex_unlock(&priv->buffer_lock);
+	return ret;
 }
 
 static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
