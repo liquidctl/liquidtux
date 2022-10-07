@@ -34,38 +34,37 @@ static const char *const kraken3_device_names[] = {
 #define FIRMWARE_REPORT_ID	0x11
 #define STATUS_INTERVAL		1	/* seconds */
 #define STATUS_VALIDITY		(4 * STATUS_INTERVAL)	/* seconds */
-#define CUSTOM_CURVE_POINTS	40
+#define CUSTOM_CURVE_POINTS	40	/* For temps from 20C to 59C (critical temp) */
+#define PUMP_DUTY_MIN		20	/* In percent */
+#define CURVE_DUTY_MAX		100	/* In percent */
 
 /* Register offsets for Kraken X53 and Z53 */
-#define X53_TEMP_SENSOR_START_OFFSET	15
-#define X53_TEMP_SENSOR_END_OFFSET	16
-#define X53_PUMP_SPEED_OFFSET		17
-#define X53_PUMP_DUTY_OFFSET		19
-#define X53_FIRMWARE_VERSION_OFFSET	0x11
+#define TEMP_SENSOR_START_OFFSET	15
+#define TEMP_SENSOR_END_OFFSET		16
+#define PUMP_SPEED_OFFSET		17
+#define PUMP_DUTY_OFFSET		19
+#define FIRMWARE_VERSION_OFFSET		0x11
 
+/* Register offsets for Kraken Z53 */
 #define Z53_FAN_SPEED_OFFSET		23
 #define Z53_FAN_DUTY_OFFSET		25
 
-/* Control commands for Kraken X53 and Z53*/
-#define X53_SET_PUMP_DUTY_ID_OFFSET	0x01
-#define X53_SET_PUMP_DUTY_ID		0x01
-#define X53_SET_PUMP_DUTY_MIN		20	/* In percent */
-#define X53_SET_PUMP_DUTY_MAX		100	/* In percent */
+/* Control commands for Kraken X53 and Z53 */
+#define SET_DUTY_ID_OFFSET		0x01
 
-static u8 x53_set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL };
-static u8 x53_finish_init_cmd[] = { 0x70, 0x01 };
-static u8 x53_get_fw_version_cmd[] = { 0x10, 0x01 };
-static u8 x53_set_pump_duty_cmd_header[] = { 0x72, 0x00, 0x00, 0x00 };
+static u8 set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL };
+static u8 finish_init_cmd[] = { 0x70, 0x01 };
+static u8 get_fw_version_cmd[] = { 0x10, 0x01 };
+static u8 set_pump_duty_cmd_header[] = { 0x72, 0x00, 0x00, 0x00 };
 static u8 z53_get_status_cmd[] = { 0x74, 0x01 };
 
-#define X53_SET_INTERVAL_CMD_LENGTH		5
-#define X53_FINISH_INIT_CMD_LENGTH		2
-#define X53_GET_FW_VERSION_CMD_LENGTH		2
-#define X53_MAX_REPORT_LENGTH			64
-#define X53_MIN_REPORT_LENGTH			20
-#define X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH	4
-/* 4 byte header and 40 duty offsets for temps from 20C to 59C */
-#define X53_SET_PUMP_DUTY_CMD_LENGTH		(4 + 40)
+#define SET_INTERVAL_CMD_LENGTH			5
+#define FINISH_INIT_CMD_LENGTH			2
+#define GET_FW_VERSION_CMD_LENGTH		2
+#define MAX_REPORT_LENGTH			64
+#define MIN_REPORT_LENGTH			20
+#define SET_CURVE_DUTY_CMD_HEADER_LENGTH	4
+#define SET_CURVE_DUTY_CMD_LENGTH		(4 + 40) /* 4 byte header and 40 duty offsets */
 #define Z53_GET_STATUS_CMD_LENGTH		2
 
 static const char *const kraken3_temp_label[] = {
@@ -127,6 +126,7 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 		case z53:
 			if (channel < 4)
 				return 0444;
+			break;
 		default:
 			break;
 		}
@@ -170,9 +170,9 @@ static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_le
 
 	mutex_lock(&priv->buffer_lock);
 
-	memset(priv->buffer, 0x00, X53_MAX_REPORT_LENGTH);
+	memset(priv->buffer, 0x00, MAX_REPORT_LENGTH);
 	memcpy(priv->buffer, cmd, cmd_length);
-	ret = hid_hw_output_report(priv->hdev, priv->buffer, X53_MAX_REPORT_LENGTH);
+	ret = hid_hw_output_report(priv->hdev, priv->buffer, MAX_REPORT_LENGTH);
 
 	mutex_unlock(&priv->buffer_lock);
 	return ret;
@@ -184,8 +184,8 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 	int ret;
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
-	/* Request on demand */
 	if (priv->kind == z53) {
+		/* Request status on demand */
 		reinit_completion(&priv->z53_status_processed);
 
 		/* Send command for getting status */
@@ -240,7 +240,7 @@ static int kraken3_read_string(struct device *dev, enum hwmon_sensor_types type,
 	return 0;
 }
 
-static int kraken3_pwm_to_percent(long val)
+static int kraken3_pwm_to_percent(long val, int channel)
 {
 	int percent_value;
 
@@ -249,7 +249,7 @@ static int kraken3_pwm_to_percent(long val)
 
 	percent_value = DIV_ROUND_CLOSEST(val * 100, 255);
 
-	if (percent_value < X53_SET_PUMP_DUTY_MIN || percent_value > X53_SET_PUMP_DUTY_MAX)
+	if ((channel == 0 && percent_value < PUMP_DUTY_MIN) || percent_value > CURVE_DUTY_MAX)
 		return -EINVAL;
 
 	return percent_value;
@@ -259,19 +259,19 @@ static int kraken3_pwm_to_percent(long val)
 static int kraken3_write_curve(struct kraken3_data *priv, u8 *curve_array, int channel)
 {
 	int ret;
-	u8 fixed_duty_cmd[X53_SET_PUMP_DUTY_CMD_LENGTH];
+	u8 fixed_duty_cmd[SET_CURVE_DUTY_CMD_LENGTH];
 
 	/* Copy command header */
-	memcpy(fixed_duty_cmd, x53_set_pump_duty_cmd_header, X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH);
+	memcpy(fixed_duty_cmd, set_pump_duty_cmd_header, SET_CURVE_DUTY_CMD_HEADER_LENGTH);
 
 	/* Set the correct ID for writing pump/fan duty (0x01 or 0x02, respectively) */
-	fixed_duty_cmd[X53_SET_PUMP_DUTY_ID_OFFSET] = channel == 0 ? 1 : 2;	// TODO: pump - id -> 0, fan - id -> 1
+	fixed_duty_cmd[SET_DUTY_ID_OFFSET] = channel + 1;
 
 	/* Copy curve to command */
-	memcpy(fixed_duty_cmd + X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH, curve_array,
+	memcpy(fixed_duty_cmd + SET_CURVE_DUTY_CMD_HEADER_LENGTH, curve_array,
 	       CUSTOM_CURVE_POINTS);
 
-	ret = kraken3_write_expanded(priv, fixed_duty_cmd, X53_SET_PUMP_DUTY_CMD_LENGTH);
+	ret = kraken3_write_expanded(priv, fixed_duty_cmd, SET_CURVE_DUTY_CMD_LENGTH);
 	return ret;
 }
 
@@ -286,7 +286,7 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
-			percent_value = kraken3_pwm_to_percent(val);
+			percent_value = kraken3_pwm_to_percent(val, channel);
 			if (percent_value < 0)
 				return percent_value;
 
@@ -357,12 +357,12 @@ static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_att
 	if (val < 0 || val > 255)
 		return -EINVAL;
 
-	val = kraken3_pwm_to_percent(val);
+	val = kraken3_pwm_to_percent(val, dev_attr->nr);
 	priv->custom_curves[dev_attr->nr].pwm_points[dev_attr->index] = val;
 
 	/* Mark the curve as disabled so the user has to explicitly enable it again to apply
 	 * the changed curve. This is done to prevent spamming the device with reports when
-	 * setting each attribute one-by-one
+	 * setting each attribute one by one
 	 */
 	priv->custom_curves[dev_attr->nr].enabled = false;
 
@@ -594,13 +594,13 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	int i;
 	struct kraken3_data *priv = hid_get_drvdata(hdev);
 
-	if (size < X53_MIN_REPORT_LENGTH)
+	if (size < MIN_REPORT_LENGTH)
 		return 0;
 
 	if (report->id == FIRMWARE_REPORT_ID) {
 		/* Read firmware version */
 		for (i = 0; i < 3; i++)
-			priv->firmware_version[i] = data[X53_FIRMWARE_VERSION_OFFSET + i];
+			priv->firmware_version[i] = data[FIRMWARE_VERSION_OFFSET + i];
 		complete(&priv->fw_version_processed);
 		return 0;
 	}
@@ -608,17 +608,17 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	if (report->id != STATUS_REPORT_ID)
 		return 0;
 
-	/* Firmware/device is possibly damaged */
-	if (data[X53_TEMP_SENSOR_START_OFFSET] == 0xff && data[X53_TEMP_SENSOR_END_OFFSET] == 0xff)
-		return 0;
+	if (data[TEMP_SENSOR_START_OFFSET] == 0xff && data[TEMP_SENSOR_END_OFFSET] == 0xff)
+		return 0;	/* Firmware/device is possibly damaged */
 
 	/* Temperature and fan sensor readings */
 	priv->temp_input[0] =
-	    data[X53_TEMP_SENSOR_START_OFFSET] * 1000 + data[X53_TEMP_SENSOR_END_OFFSET] * 100;
+	    data[TEMP_SENSOR_START_OFFSET] * 1000 + data[TEMP_SENSOR_END_OFFSET] * 100;
 
-	priv->fan_input[0] = get_unaligned_le16(data + X53_PUMP_SPEED_OFFSET);
-	priv->fan_input[1] = data[X53_PUMP_DUTY_OFFSET];
+	priv->fan_input[0] = get_unaligned_le16(data + PUMP_SPEED_OFFSET);
+	priv->fan_input[1] = data[PUMP_DUTY_OFFSET];
 
+	/* Additional readings for Z53 */
 	if (priv->kind == z53) {
 		priv->fan_input[2] = get_unaligned_le16(data + Z53_FAN_SPEED_OFFSET);
 		priv->fan_input[3] = data[Z53_FAN_DUTY_OFFSET];
@@ -637,12 +637,12 @@ static int kraken3_init_device(struct hid_device *hdev)
 	struct kraken3_data *priv = hid_get_drvdata(hdev);
 
 	/* Set the polling interval */
-	ret = kraken3_write_expanded(priv, x53_set_interval_cmd, X53_SET_INTERVAL_CMD_LENGTH);
+	ret = kraken3_write_expanded(priv, set_interval_cmd, SET_INTERVAL_CMD_LENGTH);
 	if (ret < 0)
 		return ret;
 
 	/* Finalize the init process */
-	ret = kraken3_write_expanded(priv, x53_finish_init_cmd, X53_FINISH_INIT_CMD_LENGTH);
+	ret = kraken3_write_expanded(priv, finish_init_cmd, FINISH_INIT_CMD_LENGTH);
 	if (ret < 0)
 		return ret;
 
@@ -669,7 +669,7 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 
 	reinit_completion(&priv->fw_version_processed);
 
-	ret = kraken3_write_expanded(priv, x53_get_fw_version_cmd, X53_GET_FW_VERSION_CMD_LENGTH);
+	ret = kraken3_write_expanded(priv, get_fw_version_cmd, GET_FW_VERSION_CMD_LENGTH);
 	if (ret < 0)
 		return -ENODATA;
 
@@ -757,7 +757,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	priv->name = kraken3_device_names[priv->kind];
 	priv->groups = kraken3_groups;
 
-	priv->buffer = devm_kzalloc(&hdev->dev, X53_MAX_REPORT_LENGTH, GFP_KERNEL);
+	priv->buffer = devm_kzalloc(&hdev->dev, MAX_REPORT_LENGTH, GFP_KERNEL);
 	if (!priv->buffer) {
 		ret = -ENOMEM;
 		goto fail_and_close;
