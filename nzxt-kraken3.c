@@ -11,6 +11,7 @@
 #include <linux/debugfs.h>
 #include <linux/hid.h>
 #include <linux/hwmon.h>
+#include <linux/hwmon-sysfs.h>
 #include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -33,6 +34,7 @@ static const char *const kraken3_device_names[] = {
 #define FIRMWARE_REPORT_ID	0x11
 #define STATUS_INTERVAL		1	/* seconds */
 #define STATUS_VALIDITY		(4 * STATUS_INTERVAL)	/* seconds */
+#define CUSTOM_CURVE_POINTS	40
 
 /* Register offsets for Kraken X53 and Z53 */
 #define X53_TEMP_SENSOR_START_OFFSET	15
@@ -87,6 +89,7 @@ struct kraken3_data {
 
 	enum kinds kind;
 	const char *name;
+	const struct attribute_group **groups;
 
 	u8 *buffer;
 
@@ -271,6 +274,213 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 
 	return 0;
 }
+
+static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_attribute *attr,
+					   const char *buf, size_t count)
+{
+	long val;
+	if (kstrtol(buf, 10, &val) < 0)
+		return -EINVAL;
+	if (val < 0 || val > 255)
+		return -EINVAL;
+
+	val = kraken3_pwm_to_percent(val);
+	/* TODO */
+
+	return 0;
+}
+
+static umode_t kraken3_curve_props_are_visible(struct kobject *kobj, struct attribute *attr,
+					       int index)
+{
+	struct device *dev = kobj_to_dev(kobj);
+	struct kraken3_data *priv = dev_get_drvdata(dev);
+
+	/* Only Z53 has the fan curve */
+	if (attr->name[4] == '2' && priv->kind != z53)
+		return 0;
+
+	return attr->mode;
+}
+
+/* Custom pump and fan curves from 20C to 59C (critical temp) */
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point1_pwm, kraken3_fan_curve_pwm, 0, 0);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point2_pwm, kraken3_fan_curve_pwm, 0, 1);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point3_pwm, kraken3_fan_curve_pwm, 0, 2);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point4_pwm, kraken3_fan_curve_pwm, 0, 3);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point5_pwm, kraken3_fan_curve_pwm, 0, 4);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point6_pwm, kraken3_fan_curve_pwm, 0, 5);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point7_pwm, kraken3_fan_curve_pwm, 0, 6);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point8_pwm, kraken3_fan_curve_pwm, 0, 7);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point9_pwm, kraken3_fan_curve_pwm, 0, 8);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point10_pwm, kraken3_fan_curve_pwm, 0, 9);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point11_pwm, kraken3_fan_curve_pwm, 0, 10);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point12_pwm, kraken3_fan_curve_pwm, 0, 11);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point13_pwm, kraken3_fan_curve_pwm, 0, 12);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point14_pwm, kraken3_fan_curve_pwm, 0, 13);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point15_pwm, kraken3_fan_curve_pwm, 0, 14);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point16_pwm, kraken3_fan_curve_pwm, 0, 15);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point17_pwm, kraken3_fan_curve_pwm, 0, 16);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point18_pwm, kraken3_fan_curve_pwm, 0, 17);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point19_pwm, kraken3_fan_curve_pwm, 0, 18);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point20_pwm, kraken3_fan_curve_pwm, 0, 19);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point21_pwm, kraken3_fan_curve_pwm, 0, 20);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point22_pwm, kraken3_fan_curve_pwm, 0, 21);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point23_pwm, kraken3_fan_curve_pwm, 0, 22);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point24_pwm, kraken3_fan_curve_pwm, 0, 23);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point25_pwm, kraken3_fan_curve_pwm, 0, 24);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point26_pwm, kraken3_fan_curve_pwm, 0, 25);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point27_pwm, kraken3_fan_curve_pwm, 0, 26);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point28_pwm, kraken3_fan_curve_pwm, 0, 27);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point29_pwm, kraken3_fan_curve_pwm, 0, 28);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point30_pwm, kraken3_fan_curve_pwm, 0, 29);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point31_pwm, kraken3_fan_curve_pwm, 0, 30);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point32_pwm, kraken3_fan_curve_pwm, 0, 31);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point33_pwm, kraken3_fan_curve_pwm, 0, 32);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point34_pwm, kraken3_fan_curve_pwm, 0, 33);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point35_pwm, kraken3_fan_curve_pwm, 0, 34);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point36_pwm, kraken3_fan_curve_pwm, 0, 35);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point37_pwm, kraken3_fan_curve_pwm, 0, 36);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point38_pwm, kraken3_fan_curve_pwm, 0, 37);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point39_pwm, kraken3_fan_curve_pwm, 0, 38);
+static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point40_pwm, kraken3_fan_curve_pwm, 0, 39);
+
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point1_pwm, kraken3_fan_curve_pwm, 1, 0);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point2_pwm, kraken3_fan_curve_pwm, 1, 1);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point3_pwm, kraken3_fan_curve_pwm, 1, 2);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point4_pwm, kraken3_fan_curve_pwm, 1, 3);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point5_pwm, kraken3_fan_curve_pwm, 1, 4);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point6_pwm, kraken3_fan_curve_pwm, 1, 5);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point7_pwm, kraken3_fan_curve_pwm, 1, 6);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point8_pwm, kraken3_fan_curve_pwm, 1, 7);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point9_pwm, kraken3_fan_curve_pwm, 1, 8);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point10_pwm, kraken3_fan_curve_pwm, 1, 9);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point11_pwm, kraken3_fan_curve_pwm, 1, 10);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point12_pwm, kraken3_fan_curve_pwm, 1, 11);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point13_pwm, kraken3_fan_curve_pwm, 1, 12);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point14_pwm, kraken3_fan_curve_pwm, 1, 13);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point15_pwm, kraken3_fan_curve_pwm, 1, 14);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point16_pwm, kraken3_fan_curve_pwm, 1, 15);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point17_pwm, kraken3_fan_curve_pwm, 1, 16);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point18_pwm, kraken3_fan_curve_pwm, 1, 17);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point19_pwm, kraken3_fan_curve_pwm, 1, 18);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point20_pwm, kraken3_fan_curve_pwm, 1, 19);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point21_pwm, kraken3_fan_curve_pwm, 1, 20);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point22_pwm, kraken3_fan_curve_pwm, 1, 21);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point23_pwm, kraken3_fan_curve_pwm, 1, 22);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point24_pwm, kraken3_fan_curve_pwm, 1, 23);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point25_pwm, kraken3_fan_curve_pwm, 1, 24);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point26_pwm, kraken3_fan_curve_pwm, 1, 25);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point27_pwm, kraken3_fan_curve_pwm, 1, 26);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point28_pwm, kraken3_fan_curve_pwm, 1, 27);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point29_pwm, kraken3_fan_curve_pwm, 1, 28);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point30_pwm, kraken3_fan_curve_pwm, 1, 29);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point31_pwm, kraken3_fan_curve_pwm, 1, 30);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point32_pwm, kraken3_fan_curve_pwm, 1, 31);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point33_pwm, kraken3_fan_curve_pwm, 1, 32);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point34_pwm, kraken3_fan_curve_pwm, 1, 33);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point35_pwm, kraken3_fan_curve_pwm, 1, 34);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point36_pwm, kraken3_fan_curve_pwm, 1, 35);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point37_pwm, kraken3_fan_curve_pwm, 1, 36);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point38_pwm, kraken3_fan_curve_pwm, 1, 37);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point39_pwm, kraken3_fan_curve_pwm, 1, 38);
+static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point40_pwm, kraken3_fan_curve_pwm, 1, 39);
+
+static struct attribute *kraken3_curve_attrs[] = {
+	/* Pump control curve */
+	&(sensor_dev_attr_temp1_auto_point1_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point2_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point3_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point4_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point5_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point6_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point7_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point8_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point9_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point10_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point11_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point12_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point13_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point14_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point15_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point16_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point17_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point18_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point19_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point20_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point21_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point22_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point23_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point24_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point25_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point26_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point27_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point28_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point29_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point30_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point31_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point32_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point33_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point34_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point35_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point36_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point37_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point38_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point39_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp1_auto_point40_pwm.dev_attr.attr),
+	/* Fan control curve (Z53 only) */
+	&(sensor_dev_attr_temp2_auto_point1_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point2_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point3_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point4_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point5_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point6_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point7_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point8_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point9_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point10_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point11_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point12_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point13_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point14_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point15_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point16_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point17_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point18_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point19_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point20_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point21_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point22_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point23_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point24_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point25_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point26_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point27_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point28_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point29_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point30_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point31_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point32_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point33_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point34_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point35_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point36_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point37_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point38_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point39_pwm.dev_attr.attr),
+	&(sensor_dev_attr_temp2_auto_point40_pwm.dev_attr.attr),
+	NULL
+};
+
+static const struct attribute_group kraken3_curves_group = {
+	.attrs = kraken3_curve_attrs,
+	.is_visible = kraken3_curve_props_are_visible
+};
+
+static const struct attribute_group *kraken3_groups[] = {
+	&kraken3_curves_group,
+	NULL
+};
 
 static const struct hwmon_ops kraken3_hwmon_ops = {
 	.is_visible = kraken3_is_visible,
@@ -465,6 +675,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	}
 
 	priv->name = kraken3_device_names[priv->kind];
+	priv->groups = kraken3_groups;
 
 	priv->buffer = devm_kzalloc(&hdev->dev, X53_MAX_REPORT_LENGTH, GFP_KERNEL);
 	if (!priv->buffer) {
@@ -483,7 +694,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	}
 
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, priv->name,
-							  priv, &kraken3_chip_info, NULL);
+							  priv, &kraken3_chip_info, priv->groups);
 	if (IS_ERR(priv->hwmon_dev)) {
 		ret = PTR_ERR(priv->hwmon_dev);
 		hid_err(hdev, "hwmon registration failed with %d\n", ret);
