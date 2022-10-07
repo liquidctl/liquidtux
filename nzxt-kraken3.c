@@ -92,6 +92,8 @@ struct kraken3_data {
 	const struct attribute_group **groups;
 
 	u8 *buffer;
+	u8 pump_curve[40];
+	u8 fan_curve[40];
 
 	/* Sensor values */
 	s32 temp_input[1];
@@ -231,11 +233,31 @@ static int kraken3_pwm_to_percent(long val)
 	return percent_value;
 }
 
+/* Writes custom curve to device */
+static int kraken3_write_curve(struct kraken3_data *priv, u8 *curve_array, int channel)
+{
+	int ret;
+	u8 fixed_duty_cmd[X53_SET_PUMP_DUTY_CMD_LENGTH];
+
+	/* Copy command header */
+	memcpy(fixed_duty_cmd, x53_set_pump_duty_cmd_header, X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH);
+
+	/* Set the correct ID for writing pump/fan duty */
+	fixed_duty_cmd[X53_SET_PUMP_DUTY_ID_OFFSET] = channel == 0 ? 1 : 2;	// TODO: pump - id -> 0, fan - id -> 1
+
+	/* Copy curve to command */
+	memcpy(fixed_duty_cmd + X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH, curve_array,
+	       CUSTOM_CURVE_POINTS);
+
+	ret = kraken3_write_expanded(priv, fixed_duty_cmd, X53_SET_PUMP_DUTY_CMD_LENGTH);
+	return ret;
+}
+
 static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
 			 long val)
 {
 	int ret, percent_value, i;
-	u8 fixed_duty_cmd[X53_SET_PUMP_DUTY_CMD_LENGTH];
+	u8 fixed_curve[CUSTOM_CURVE_POINTS];
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
 	switch (type) {
@@ -249,22 +271,14 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 		 * critical liquid temp) with the same duty
 		 */
 
-		/* Copy command header */
-		memcpy(fixed_duty_cmd, x53_set_pump_duty_cmd_header,
-		       X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH);
+		/* Fill the custom curve with the fixed value we're setting */
+		for (i = 0; i < CUSTOM_CURVE_POINTS - 1; i++)
+			fixed_curve[i] = percent_value;
 
-		/* Set the correct ID for writing pump duty */
-		fixed_duty_cmd[X53_SET_PUMP_DUTY_ID_OFFSET] = X53_SET_PUMP_DUTY_ID;
+		/* Force the curve duty to 100% when above critical temp */
+		fixed_curve[CUSTOM_CURVE_POINTS - 1] = 100;
 
-		/* Fill the rest of the command with the fixed value we're setting */
-		for (i = X53_SET_PUMP_DUTY_CMD_HEADER_LENGTH;
-		     i < X53_SET_PUMP_DUTY_CMD_LENGTH - 1; i++)
-			fixed_duty_cmd[i] = percent_value;
-
-		/* Force the pump duty to 100% when above critical temp */
-		fixed_duty_cmd[X53_SET_PUMP_DUTY_CMD_LENGTH - 1] = 100;
-
-		ret = kraken3_write_expanded(priv, fixed_duty_cmd, X53_SET_PUMP_DUTY_CMD_LENGTH);
+		ret = kraken3_write_curve(priv, fixed_curve, channel);
 		if (ret < 0)
 			return ret;
 		break;
@@ -278,7 +292,11 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_attribute *attr,
 					   const char *buf, size_t count)
 {
+	struct sensor_device_attribute_2 *dev_attr = to_sensor_dev_attr_2(attr);
+	struct kraken3_data *priv = dev_get_drvdata(dev);
+	u8 *curve_array;
 	long val;
+	int ret;
 
 	if (kstrtol(buf, 10, &val) < 0)
 		return -EINVAL;
@@ -286,9 +304,17 @@ static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_att
 		return -EINVAL;
 
 	val = kraken3_pwm_to_percent(val);
-	/* TODO */
 
-	return 0;
+	if (dev_attr->nr == 0)
+		curve_array = priv->pump_curve;
+	else
+		curve_array = priv->fan_curve;
+
+	curve_array[dev_attr->index] = val;
+
+	// todo: if pwm_enable
+	ret = kraken3_write_curve(priv, curve_array, dev_attr->nr);
+	return ret;
 }
 
 static umode_t kraken3_curve_props_are_visible(struct kobject *kobj, struct attribute *attr,
@@ -304,7 +330,7 @@ static umode_t kraken3_curve_props_are_visible(struct kobject *kobj, struct attr
 	return attr->mode;
 }
 
-/* Custom pump and fan curves from 20C to 59C (critical temp) */
+/* Custom pump curve from 20C to 59C (critical temp) */
 static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point1_pwm, kraken3_fan_curve_pwm, 0, 0);
 static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point2_pwm, kraken3_fan_curve_pwm, 0, 1);
 static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point3_pwm, kraken3_fan_curve_pwm, 0, 2);
@@ -346,6 +372,7 @@ static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point38_pwm, kraken3_fan_curve_pwm, 0,
 static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point39_pwm, kraken3_fan_curve_pwm, 0, 38);
 static SENSOR_DEVICE_ATTR_2_WO(temp1_auto_point40_pwm, kraken3_fan_curve_pwm, 0, 39);
 
+/* Custom fan curve from 20C to 59C (critical temp) */
 static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point1_pwm, kraken3_fan_curve_pwm, 1, 0);
 static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point2_pwm, kraken3_fan_curve_pwm, 1, 1);
 static SENSOR_DEVICE_ATTR_2_WO(temp2_auto_point3_pwm, kraken3_fan_curve_pwm, 1, 2);
