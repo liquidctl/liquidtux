@@ -354,10 +354,11 @@ static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_att
 
 	if (kstrtol(buf, 10, &val) < 0)
 		return -EINVAL;
-	if (val < 0 || val > 255)
-		return -EINVAL;
 
 	val = kraken3_pwm_to_percent(val, dev_attr->nr);
+	if (val < 0)
+		return val;
+
 	priv->custom_curves[dev_attr->nr].pwm_points[dev_attr->index] = val;
 
 	/* Mark the curve as disabled so the user has to explicitly enable it again to apply
