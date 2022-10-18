@@ -160,7 +160,8 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 	return 0;
 }
 
-/* Writes the command to the device with the rest of the report (up to 64 bytes) filled
+/*
+ * Writes the command to the device with the rest of the report (up to 64 bytes) filled
  * with zeroes
  */
 static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_length)
@@ -289,7 +290,8 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 			if (percent_value < 0)
 				return percent_value;
 
-			/* The devices can only control the pump duty through a curve.
+			/*
+			 * The devices can only control the pump duty through a curve.
 			 * Since we're setting a fixed duty here, fill the whole curve
 			 * (ranging from 20C to 59C, which is the critical liquid temp)
 			 * with the same duty
@@ -360,7 +362,8 @@ static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_att
 
 	priv->custom_curves[dev_attr->nr].pwm_points[dev_attr->index] = val;
 
-	/* Mark the curve as disabled so the user has to explicitly enable it again to apply
+	/*
+	 * Mark the curve as disabled so the user has to explicitly enable it again to apply
 	 * the changed curve. This is done to prevent spamming the device with reports when
 	 * setting each attribute one by one
 	 */
@@ -677,7 +680,8 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 	if (ret < 0)
 		return -ENODATA;
 
-	/* The response to this request that the device sends is only catchable in
+	/*
+	 * The response to this request that the device sends is only catchable in
 	 * kraken3_raw_event(), so we have to wait until it's processed there
 	 */
 	wait_for_completion(&priv->fw_version_processed);
@@ -721,7 +725,8 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	priv->hdev = hdev;
 	hid_set_drvdata(hdev, priv);
 
-	/* Initialize ->updated to STATUS_VALIDITY seconds in the past, making
+	/*
+	 * Initialize ->updated to STATUS_VALIDITY seconds in the past, making
 	 * the initial empty data invalid for kraken3_read without the need for
 	 * a special case there.
 	 */
