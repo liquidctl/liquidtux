@@ -299,7 +299,7 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 			for (i = 0; i < CUSTOM_CURVE_POINTS - 1; i++)
 				fixed_curve_points[i] = percent_value;
 
-			/* Force duty to 100% when above critical temp */
+			/* Force duty to 100% at critical temp */
 			fixed_curve_points[CUSTOM_CURVE_POINTS - 1] = 100;
 
 			/* Write the fixed duty curve to the device */
