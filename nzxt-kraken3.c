@@ -302,13 +302,13 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 			/* Force duty to 100% when above critical temp */
 			fixed_curve_points[CUSTOM_CURVE_POINTS - 1] = 100;
 
-			/* Switch to direct duty mode immediately */
-			priv->custom_curves[channel].enabled = false;
-
 			/* Write the fixed duty curve to the device */
 			ret = kraken3_write_curve(priv, fixed_curve_points, channel);
 			if (ret < 0)
 				return ret;
+
+			/* Switch to direct duty mode */
+			priv->custom_curves[channel].enabled = false;
 			break;
 		case hwmon_pwm_enable:
 			if (val < 0 || val > 2)
@@ -321,15 +321,16 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 				priv->custom_curves[channel].enabled = false;
 				break;
 			case 2:
-				/* Enable and apply the curve */
-				priv->custom_curves[channel].enabled = true;
-
+				/* Apply the curve and note as enabled */
 				ret =
 				    kraken3_write_curve(priv,
 							priv->custom_curves[channel].pwm_points,
 							channel);
 				if (ret < 0)
 					return ret;
+
+
+				priv->custom_curves[channel].enabled = true;
 				break;
 			default:
 				break;
