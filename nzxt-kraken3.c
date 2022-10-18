@@ -609,8 +609,12 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	if (report->id != STATUS_REPORT_ID)
 		return 0;
 
-	if (data[TEMP_SENSOR_START_OFFSET] == 0xff && data[TEMP_SENSOR_END_OFFSET] == 0xff)
-		return 0;	/* Firmware/device is possibly damaged */
+	if (data[TEMP_SENSOR_START_OFFSET] == 0xff && data[TEMP_SENSOR_END_OFFSET] == 0xff) {
+		hid_err(hdev, "firmware or device is possibly damaged, not parsing reports\n");
+
+		complete(&priv->z53_status_processed);
+		return 0;
+	}
 
 	/* Temperature and fan sensor readings */
 	priv->temp_input[0] =
