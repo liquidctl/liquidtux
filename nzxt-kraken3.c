@@ -93,7 +93,6 @@ struct kraken3_data {
 
 	enum kinds kind;
 	const char *name;
-	const struct attribute_group **groups;
 
 	u8 *buffer;
 	struct kraken3_custom_curve custom_curves[2];	/* Pump and fan curves */
@@ -756,7 +755,6 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	}
 
 	priv->name = kraken3_device_names[priv->kind];
-	priv->groups = kraken3_groups;
 
 	priv->buffer = devm_kzalloc(&hdev->dev, MAX_REPORT_LENGTH, GFP_KERNEL);
 	if (!priv->buffer) {
@@ -775,7 +773,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	}
 
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, priv->name,
-							  priv, &kraken3_chip_info, priv->groups);
+							  priv, &kraken3_chip_info, kraken3_groups);
 	if (IS_ERR(priv->hwmon_dev)) {
 		ret = PTR_ERR(priv->hwmon_dev);
 		hid_err(hdev, "hwmon registration failed with %d\n", ret);
