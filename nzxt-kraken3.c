@@ -329,7 +329,6 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 				if (ret < 0)
 					return ret;
 
-
 				priv->custom_curves[channel].enabled = true;
 				break;
 			default:
