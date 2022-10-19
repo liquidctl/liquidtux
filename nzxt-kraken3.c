@@ -345,7 +345,7 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 			switch (val) {
 			case 0:
 				/* Set channel to 100%, direct duty value */
-				ret = kraken3_write_fixed_duty(priv, 100, channel);
+				ret = kraken3_write_fixed_duty(priv, 255, channel);
 				if (ret < 0)
 					return ret;
 
