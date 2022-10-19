@@ -379,7 +379,7 @@ static umode_t kraken3_curve_props_are_visible(struct kobject *kobj, struct attr
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
 	/* Only Z53 has the fan curve */
-	if (attr->name[4] == '2' && priv->kind != z53)
+	if (index >= CUSTOM_CURVE_POINTS && priv->kind != z53)
 		return 0;
 
 	return attr->mode;
