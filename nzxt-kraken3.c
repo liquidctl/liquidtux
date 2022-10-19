@@ -64,7 +64,7 @@ static u8 z53_get_status_cmd[] = { 0x74, 0x01 };
 #define MAX_REPORT_LENGTH			64
 #define MIN_REPORT_LENGTH			20
 #define SET_CURVE_DUTY_CMD_HEADER_LENGTH	4
-#define SET_CURVE_DUTY_CMD_LENGTH		(4 + 40) /* 4 byte header and 40 duty offsets */
+#define SET_CURVE_DUTY_CMD_LENGTH		(4 + 40)	/* 4 byte header and 40 duty offsets */
 #define Z53_GET_STATUS_CMD_LENGTH		2
 
 static const char *const kraken3_temp_label[] = {
@@ -76,8 +76,10 @@ static const char *const kraken3_fan_label[] = {
 	"Fan speed"
 };
 
-struct kraken3_custom_curve {
-	bool enabled;
+struct kraken3_channel_info {
+	bool fixed_duty_enabled;
+	u16 fixed_duty;
+	bool curve_enabled;
 	u8 pwm_points[CUSTOM_CURVE_POINTS];
 };
 
@@ -93,7 +95,7 @@ struct kraken3_data {
 	const char *name;
 
 	u8 *buffer;
-	struct kraken3_custom_curve custom_curves[2];	/* Pump and fan curves */
+	struct kraken3_channel_info channel_info[2];	/* Pump and fan */
 
 	/* Sensor values */
 	s32 temp_input[1];
@@ -229,8 +231,9 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_enable:
-			/* Increment to satisfy hwmon rules */
-			*val = priv->custom_curves[channel].enabled + 1;
+			*val =
+			    priv->channel_info[channel].fixed_duty_enabled +
+			    priv->channel_info[channel].curve_enabled;
 			break;
 		case hwmon_pwm_input:
 			*val = kraken3_percent_to_pwm(priv->duty_input[channel]);
@@ -276,49 +279,63 @@ static int kraken3_write_curve(struct kraken3_data *priv, u8 *curve_array, int c
 	fixed_duty_cmd[SET_DUTY_ID_OFFSET] = channel + 1;
 
 	/* Copy curve to command */
-	memcpy(fixed_duty_cmd + SET_CURVE_DUTY_CMD_HEADER_LENGTH, curve_array,
-	       CUSTOM_CURVE_POINTS);
+	memcpy(fixed_duty_cmd + SET_CURVE_DUTY_CMD_HEADER_LENGTH, curve_array, CUSTOM_CURVE_POINTS);
 
 	ret = kraken3_write_expanded(priv, fixed_duty_cmd, SET_CURVE_DUTY_CMD_LENGTH);
 	return ret;
 }
 
-static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
-			 long val)
+static int kraken3_write_fixed_duty(struct kraken3_data *priv, int channel, long val)
 {
 	int ret, percent_value, i;
 	u8 fixed_curve_points[CUSTOM_CURVE_POINTS];
+
+	percent_value = kraken3_pwm_to_percent(val, channel);
+	if (percent_value < 0)
+		return percent_value;
+
+	/*
+	 * The devices can only control the duty through a curve.
+	 * Since we're setting a fixed duty here, fill the whole curve
+	 * (ranging from 20C to 59C, which is the critical liquid temp)
+	 * with the same duty
+	 */
+
+	/* Fill the custom curve with the fixed value we're setting */
+	for (i = 0; i < CUSTOM_CURVE_POINTS - 1; i++)
+		fixed_curve_points[i] = percent_value;
+
+	/* Force duty to 100% at critical temp */
+	fixed_curve_points[CUSTOM_CURVE_POINTS - 1] = 100;
+
+	/* Write the fixed duty curve to the device */
+	ret = kraken3_write_curve(priv, fixed_curve_points, channel);
+	if (ret < 0)
+		return ret;
+
+	/* Switch to direct duty mode */
+	priv->channel_info[channel].curve_enabled = false;
+	priv->channel_info[channel].fixed_duty_enabled = true;
+
+	return 0;
+}
+
+static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
+			 long val)
+{
+	int ret;
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
 	switch (type) {
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
-			percent_value = kraken3_pwm_to_percent(val, channel);
-			if (percent_value < 0)
-				return percent_value;
-
-			/*
-			 * The devices can only control the pump duty through a curve.
-			 * Since we're setting a fixed duty here, fill the whole curve
-			 * (ranging from 20C to 59C, which is the critical liquid temp)
-			 * with the same duty
-			 */
-
-			/* Fill the custom curve with the fixed value we're setting */
-			for (i = 0; i < CUSTOM_CURVE_POINTS - 1; i++)
-				fixed_curve_points[i] = percent_value;
-
-			/* Force duty to 100% at critical temp */
-			fixed_curve_points[CUSTOM_CURVE_POINTS - 1] = 100;
-
-			/* Write the fixed duty curve to the device */
-			ret = kraken3_write_curve(priv, fixed_curve_points, channel);
+			ret = kraken3_write_fixed_duty(priv, channel, val);
 			if (ret < 0)
 				return ret;
 
-			/* Switch to direct duty mode */
-			priv->custom_curves[channel].enabled = false;
+			/* Remember the last set fixed duty for channel */
+			priv->channel_info[channel].fixed_duty = val;
 			break;
 		case hwmon_pwm_enable:
 			if (val < 0 || val > 2)
@@ -327,19 +344,23 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 			switch (val) {
 			case 0:
 			case 1:
-				/* Disable the custom curve */
-				priv->custom_curves[channel].enabled = false;
+				/* Apply the last known direct duty value */
+				ret =
+				    kraken3_write_fixed_duty(priv, channel,
+							     priv->channel_info[channel].
+							     fixed_duty);
 				break;
 			case 2:
 				/* Apply the curve and note as enabled */
 				ret =
 				    kraken3_write_curve(priv,
-							priv->custom_curves[channel].pwm_points,
+							priv->channel_info[channel].pwm_points,
 							channel);
 				if (ret < 0)
 					return ret;
 
-				priv->custom_curves[channel].enabled = true;
+				priv->channel_info[channel].curve_enabled = true;
+				priv->channel_info[channel].fixed_duty_enabled = false;
 				break;
 			default:
 				break;
@@ -368,14 +389,14 @@ static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_att
 	if (val < 0)
 		return val;
 
-	priv->custom_curves[dev_attr->nr].pwm_points[dev_attr->index] = val;
+	priv->channel_info[dev_attr->nr].pwm_points[dev_attr->index] = val;
 
 	/*
 	 * Mark the curve as disabled so the user has to explicitly enable it again to apply
 	 * the changed curve. This is done to prevent spamming the device with reports when
 	 * setting each attribute one by one
 	 */
-	priv->custom_curves[dev_attr->nr].enabled = false;
+	priv->channel_info[dev_attr->nr].curve_enabled = false;
 
 	return count;
 }
