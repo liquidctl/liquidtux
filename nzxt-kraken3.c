@@ -64,7 +64,8 @@ static u8 z53_get_status_cmd[] = { 0x74, 0x01 };
 #define MAX_REPORT_LENGTH			64
 #define MIN_REPORT_LENGTH			20
 #define SET_CURVE_DUTY_CMD_HEADER_LENGTH	4
-#define SET_CURVE_DUTY_CMD_LENGTH		(4 + 40)	/* 4 byte header and 40 duty offsets */
+/* 4 byte header and 40 duty offsets */
+#define SET_CURVE_DUTY_CMD_LENGTH		(4 + 40)
 #define Z53_GET_STATUS_CMD_LENGTH		2
 
 static const char *const kraken3_temp_label[] = {
@@ -285,7 +286,7 @@ static int kraken3_write_curve(struct kraken3_data *priv, u8 *curve_array, int c
 	return ret;
 }
 
-static int kraken3_write_fixed_duty(struct kraken3_data *priv, int channel, long val)
+static int kraken3_write_fixed_duty(struct kraken3_data *priv, long val, int channel)
 {
 	int ret, percent_value, i;
 	u8 fixed_curve_points[CUSTOM_CURVE_POINTS];
@@ -330,7 +331,7 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
-			ret = kraken3_write_fixed_duty(priv, channel, val);
+			ret = kraken3_write_fixed_duty(priv, val, channel);
 			if (ret < 0)
 				return ret;
 
@@ -346,9 +347,9 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 			case 1:
 				/* Apply the last known direct duty value */
 				ret =
-				    kraken3_write_fixed_duty(priv, channel,
-							     priv->channel_info[channel].
-							     fixed_duty);
+				    kraken3_write_fixed_duty(priv,
+							     priv->channel_info[channel].fixed_duty,
+							     channel);
 				break;
 			case 2:
 				/* Apply the curve and note as enabled */
