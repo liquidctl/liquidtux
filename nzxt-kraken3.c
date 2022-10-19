@@ -73,9 +73,7 @@ static const char *const kraken3_temp_label[] = {
 
 static const char *const kraken3_fan_label[] = {
 	"Pump speed",
-	"Pump duty [%]",
-	"Fan speed",
-	"Fan duty [%]"
+	"Fan speed"
 };
 
 struct kraken3_custom_curve {
@@ -99,7 +97,8 @@ struct kraken3_data {
 
 	/* Sensor values */
 	s32 temp_input[1];
-	u16 fan_input[4];
+	u16 fan_input[2];
+	u16 duty_input[2];
 
 	u8 firmware_version[3];
 
@@ -119,11 +118,11 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 	case hwmon_fan:
 		switch (priv->kind) {
 		case x53:
-			if (channel < 2)
+			if (channel < 1)
 				return 0444;
 			break;
 		case z53:
-			if (channel < 4)
+			if (channel < 2)
 				return 0444;
 			break;
 		default:
@@ -178,6 +177,27 @@ static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_le
 	return ret;
 }
 
+static int kraken3_percent_to_pwm(long val)
+{
+	return DIV_ROUND_CLOSEST(val * 255, 100);
+}
+
+static int kraken3_pwm_to_percent(long val, int channel)
+{
+	int percent_value;
+
+	if (val < 0 || val > 255)
+		return -EINVAL;
+
+	percent_value = DIV_ROUND_CLOSEST(val * 100, 255);
+
+	/* Pump has a minimum duty value in addition to the max */
+	if ((channel == 0 && percent_value < PUMP_DUTY_MIN) || percent_value > CURVE_DUTY_MAX)
+		return -EINVAL;
+
+	return percent_value;
+}
+
 static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
 			long *val)
 {
@@ -212,6 +232,9 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 			/* Increment to satisfy hwmon rules */
 			*val = priv->custom_curves[channel].enabled + 1;
 			break;
+		case hwmon_pwm_input:
+			*val = kraken3_percent_to_pwm(priv->duty_input[channel]);
+			break;
 		default:
 			break;
 		}
@@ -238,21 +261,6 @@ static int kraken3_read_string(struct device *dev, enum hwmon_sensor_types type,
 	}
 
 	return 0;
-}
-
-static int kraken3_pwm_to_percent(long val, int channel)
-{
-	int percent_value;
-
-	if (val < 0 || val > 255)
-		return -EINVAL;
-
-	percent_value = DIV_ROUND_CLOSEST(val * 100, 255);
-
-	if ((channel == 0 && percent_value < PUMP_DUTY_MIN) || percent_value > CURVE_DUTY_MAX)
-		return -EINVAL;
-
-	return percent_value;
 }
 
 /* Writes custom curve to device */
@@ -623,12 +631,12 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	    data[TEMP_SENSOR_START_OFFSET] * 1000 + data[TEMP_SENSOR_END_OFFSET] * 100;
 
 	priv->fan_input[0] = get_unaligned_le16(data + PUMP_SPEED_OFFSET);
-	priv->fan_input[1] = data[PUMP_DUTY_OFFSET];
+	priv->duty_input[0] = data[PUMP_DUTY_OFFSET];
 
 	/* Additional readings for Z53 */
 	if (priv->kind == z53) {
-		priv->fan_input[2] = get_unaligned_le16(data + Z53_FAN_SPEED_OFFSET);
-		priv->fan_input[3] = data[Z53_FAN_DUTY_OFFSET];
+		priv->fan_input[1] = get_unaligned_le16(data + Z53_FAN_SPEED_OFFSET);
+		priv->duty_input[1] = data[Z53_FAN_DUTY_OFFSET];
 
 		complete(&priv->z53_status_processed);
 	}
