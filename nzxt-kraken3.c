@@ -389,9 +389,10 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_attribute *attr,
 					   const char *buf, size_t count)
 {
+	int ret;
+	long val;
 	struct sensor_device_attribute_2 *dev_attr = to_sensor_dev_attr_2(attr);
 	struct kraken3_data *priv = dev_get_drvdata(dev);
-	long val;
 
 	if (kstrtol(buf, 10, &val) < 0)
 		return -EINVAL;
@@ -402,12 +403,15 @@ static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_att
 
 	priv->channel_info[dev_attr->nr].pwm_points[dev_attr->index] = val;
 
-	/*
-	 * Mark the curve as disabled so the user has to explicitly enable it again to apply
-	 * the changed curve. This is done to prevent spamming the device with reports when
-	 * setting each attribute one by one
-	 */
-	priv->channel_info[dev_attr->nr].curve_enabled = false;
+	if (priv->channel_info[dev_attr->nr].curve_enabled) {
+		/* Apply the curve */
+		ret =
+			kraken3_write_curve(priv,
+					    priv->channel_info[dev_attr->nr].pwm_points,
+					    dev_attr->nr);
+		if (ret < 0)
+			return ret;
+	}
 
 	return count;
 }
