@@ -344,12 +344,22 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 
 			switch (val) {
 			case 0:
+				/* Set channel to 100%, direct duty value */
+				ret = kraken3_write_fixed_duty(priv, 100, channel);
+				if (ret < 0)
+					return ret;
+
+				/* We don't control anything anymore */
+				priv->channel_info[channel].fixed_duty_enabled = false;
+				break;
 			case 1:
 				/* Apply the last known direct duty value */
 				ret =
 				    kraken3_write_fixed_duty(priv,
 							     priv->channel_info[channel].fixed_duty,
 							     channel);
+				if (ret < 0)
+					return ret;
 				break;
 			case 2:
 				/* Apply the curve and note as enabled */
