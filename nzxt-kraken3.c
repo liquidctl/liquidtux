@@ -27,7 +27,7 @@ enum pwm_enable { off, manual, curve } __packed;
 
 static const char *const kraken3_device_names[] = {
 	[X53] = "x53",
-	[X53] = "z53",
+	[Z53] = "z53",
 };
 
 #define DRIVER_NAME		"nzxt_kraken3"
