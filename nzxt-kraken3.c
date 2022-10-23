@@ -656,7 +656,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 		return 0;
 
 	if (data[TEMP_SENSOR_START_OFFSET] == 0xff && data[TEMP_SENSOR_END_OFFSET] == 0xff) {
-		hid_err(hdev, "firmware or device is possibly damaged, not parsing reports\n");
+		hid_err_once(hdev, "firmware or device is possibly damaged, not parsing reports\n");
 
 		complete(&priv->z53_status_processed);
 		return 0;
