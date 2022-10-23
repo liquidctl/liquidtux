@@ -121,10 +121,12 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 	case hwmon_fan:
 		switch (priv->kind) {
 		case x53:
+			/* Just the pump */
 			if (channel < 1)
 				return 0444;
 			break;
 		case z53:
+			/* Pump and fan */
 			if (channel < 2)
 				return 0444;
 			break;
