@@ -101,7 +101,7 @@ struct kraken3_data {
 	/* Sensor values */
 	s32 temp_input[1];
 	u16 fan_input[2];
-	u16 duty_input[2];
+	u8 duty_input[2];
 
 	u8 firmware_version[3];
 
