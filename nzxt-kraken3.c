@@ -298,8 +298,9 @@ static int kraken3_write_fixed_duty(struct kraken3_data *priv, long val, int cha
 	/*
 	 * The devices can only control the duty through a curve.
 	 * Since we're setting a fixed duty here, fill the whole curve
-	 * (ranging from 20C to 59C, which is the critical liquid temp)
-	 * with the same duty
+	 * (ranging from 20C to 59C) with the same duty, except for
+	 * the last point, the critical temperature, where it's maxed
+	 * out for safety.
 	 */
 
 	/* Fill the custom curve with the fixed value we're setting */
