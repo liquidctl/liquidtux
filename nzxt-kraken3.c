@@ -23,6 +23,7 @@
 #define USB_PRODUCT_ID_Z53		0x3008
 
 enum kinds { X53, Z53 } __packed;
+enum pwm_enable { off, manual, curve } __packed;
 
 static const char *const kraken3_device_names[] = {
 	[X53] = "x53",
@@ -78,9 +79,8 @@ static const char *const kraken3_fan_label[] = {
 };
 
 struct kraken3_channel_info {
-	bool fixed_duty_enabled;
+	enum pwm_enable mode;
 	u16 fixed_duty;
-	bool curve_enabled;
 	u8 pwm_points[CUSTOM_CURVE_POINTS];
 };
 
@@ -233,9 +233,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_enable:
-			*val =
-			    priv->channel_info[channel].fixed_duty_enabled +
-			    priv->channel_info[channel].curve_enabled;
+			*val = priv->channel_info[channel].mode;
 			break;
 		case hwmon_pwm_input:
 			*val = kraken3_percent_to_pwm(priv->duty_input[channel]);
@@ -317,8 +315,7 @@ static int kraken3_write_fixed_duty(struct kraken3_data *priv, long val, int cha
 		return ret;
 
 	/* Switch to direct duty mode */
-	priv->channel_info[channel].curve_enabled = false;
-	priv->channel_info[channel].fixed_duty_enabled = true;
+	priv->channel_info[channel].mode = manual;
 
 	return 0;
 }
@@ -352,7 +349,7 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 					return ret;
 
 				/* We don't control anything anymore */
-				priv->channel_info[channel].fixed_duty_enabled = false;
+				priv->channel_info[channel].mode = off;
 				break;
 			case 1:
 				/* Apply the last known direct duty value */
@@ -372,8 +369,7 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 				if (ret < 0)
 					return ret;
 
-				priv->channel_info[channel].curve_enabled = true;
-				priv->channel_info[channel].fixed_duty_enabled = false;
+				priv->channel_info[channel].mode = curve;
 				break;
 			default:
 				break;
@@ -405,7 +401,7 @@ static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_att
 
 	priv->channel_info[dev_attr->nr].pwm_points[dev_attr->index] = val;
 
-	if (priv->channel_info[dev_attr->nr].curve_enabled) {
+	if (priv->channel_info[dev_attr->nr].mode == curve) {
 		/* Apply the curve */
 		ret =
 			kraken3_write_curve(priv,
