@@ -25,8 +25,8 @@
 enum kinds { X53, Z53 } __packed;
 
 static const char *const kraken3_device_names[] = {
-	[x53] = "x53",
-	[z53] = "z53",
+	[X53] = "x53",
+	[X53] = "z53",
 };
 
 #define DRIVER_NAME		"nzxt_kraken3"
@@ -119,12 +119,12 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 		break;
 	case hwmon_fan:
 		switch (priv->kind) {
-		case x53:
+		case X53:
 			/* Just the pump */
 			if (channel < 1)
 				return 0444;
 			break;
-		case z53:
+		case Z53:
 			/* Pump and fan */
 			if (channel < 2)
 				return 0444;
@@ -138,12 +138,12 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 		case hwmon_pwm_enable:
 		case hwmon_pwm_input:
 			switch (priv->kind) {
-			case x53:
+			case X53:
 				/* Just the pump */
 				if (channel < 1)
 					return 0644;
 				break;
-			case z53:
+			case Z53:
 				/* Pump and fan */
 				if (channel < 2)
 					return 0644;
@@ -208,7 +208,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 	int ret;
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
-	if (priv->kind == z53) {
+	if (priv->kind == Z53) {
 		/* Request status on demand */
 		reinit_completion(&priv->z53_status_processed);
 
@@ -425,7 +425,7 @@ static umode_t kraken3_curve_props_are_visible(struct kobject *kobj, struct attr
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
 	/* Only Z53 has the fan curve */
-	if (index >= CUSTOM_CURVE_POINTS && priv->kind != z53)
+	if (index >= CUSTOM_CURVE_POINTS && priv->kind != Z53)
 		return 0;
 
 	return attr->mode;
@@ -660,7 +660,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	if (data[TEMP_SENSOR_START_OFFSET] == 0xff && data[TEMP_SENSOR_END_OFFSET] == 0xff) {
 		hid_err_once(hdev, "firmware or device is possibly damaged, not parsing reports\n");
 
-		if (priv->kind == z53)
+		if (priv->kind == Z53)
 			complete(&priv->z53_status_processed);
 		return 0;
 	}
@@ -673,7 +673,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	priv->duty_input[0] = data[PUMP_DUTY_OFFSET];
 
 	/* Additional readings for Z53 */
-	if (priv->kind == z53) {
+	if (priv->kind == Z53) {
 		priv->fan_input[1] = get_unaligned_le16(data + Z53_FAN_SPEED_OFFSET);
 		priv->duty_input[1] = data[Z53_FAN_DUTY_OFFSET];
 
@@ -801,10 +801,10 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	switch (hdev->product) {
 	case USB_PRODUCT_ID_X53:
 	case USB_PRODUCT_ID_X53_SECOND:
-		priv->kind = x53;
+		priv->kind = X53;
 		break;
 	case USB_PRODUCT_ID_Z53:
-		priv->kind = z53;
+		priv->kind = Z53;
 		break;
 	default:
 		break;
