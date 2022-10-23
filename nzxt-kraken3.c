@@ -22,7 +22,7 @@
 #define USB_PRODUCT_ID_X53_SECOND	0x2014
 #define USB_PRODUCT_ID_Z53		0x3008
 
-enum kinds { x53, z53 };
+enum kinds { X53, Z53 } __packed;
 
 static const char *const kraken3_device_names[] = {
 	[x53] = "x53",
