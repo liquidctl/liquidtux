@@ -43,14 +43,14 @@ static const char *const kraken3_device_names[] = {
 #define TEMP_SENSOR_END_OFFSET		16
 #define PUMP_SPEED_OFFSET		17
 #define PUMP_DUTY_OFFSET		19
-#define FIRMWARE_VERSION_OFFSET		0x11
+#define FIRMWARE_VERSION_OFFSET		17
 
 /* Report offsets for Kraken Z53 */
 #define Z53_FAN_SPEED_OFFSET		23
 #define Z53_FAN_DUTY_OFFSET		25
 
 /* Report offsets for control commands for Kraken X53 and Z53 */
-#define SET_DUTY_ID_OFFSET		0x01
+#define SET_DUTY_ID_OFFSET		1
 
 static u8 set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL };
 static u8 finish_init_cmd[] = { 0x70, 0x01 };
