@@ -92,8 +92,6 @@ struct kraken3_data {
 	struct completion fw_version_processed;
 	struct completion z53_status_processed;
 
-	enum kinds kind;
-
 	u8 *buffer;
 	struct kraken3_channel_info channel_info[2];	/* Pump and fan */
 
@@ -102,6 +100,7 @@ struct kraken3_data {
 	u16 fan_input[2];
 	u8 duty_input[2];
 
+	enum kinds kind;
 	u8 firmware_version[3];
 
 	unsigned long updated;	/* jiffies */
