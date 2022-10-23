@@ -311,13 +311,7 @@ static int kraken3_write_fixed_duty(struct kraken3_data *priv, long val, int cha
 
 	/* Write the fixed duty curve to the device */
 	ret = kraken3_write_curve(priv, fixed_curve_points, channel);
-	if (ret < 0)
-		return ret;
-
-	/* Switch to direct duty mode */
-	priv->channel_info[channel].mode = manual;
-
-	return 0;
+	return ret;
 }
 
 static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
@@ -359,6 +353,8 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 							     channel);
 				if (ret < 0)
 					return ret;
+
+				priv->channel_info[channel].mode = manual;
 				break;
 			case 2:
 				/* Apply the curve and note as enabled */
