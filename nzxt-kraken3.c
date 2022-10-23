@@ -93,7 +93,6 @@ struct kraken3_data {
 	struct completion z53_status_processed;
 
 	enum kinds kind;
-	const char *name;
 
 	u8 *buffer;
 	struct kraken3_channel_info channel_info[2];	/* Pump and fan */
@@ -746,7 +745,7 @@ static void kraken3_debugfs_init(struct kraken3_data *priv)
 {
 	char name[64];
 
-	scnprintf(name, sizeof(name), "%s_%s-%s", DRIVER_NAME, priv->name,
+	scnprintf(name, sizeof(name), "%s_%s-%s", DRIVER_NAME, kraken3_device_names[priv->kind],
 		  dev_name(&priv->hdev->dev));
 
 	priv->debugfs = debugfs_create_dir(name, NULL);
@@ -811,8 +810,6 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 		break;
 	}
 
-	priv->name = kraken3_device_names[priv->kind];
-
 	priv->buffer = devm_kzalloc(&hdev->dev, MAX_REPORT_LENGTH, GFP_KERNEL);
 	if (!priv->buffer) {
 		ret = -ENOMEM;
@@ -829,8 +826,9 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 		goto fail_and_close;
 	}
 
-	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, priv->name,
-							  priv, &kraken3_chip_info, kraken3_groups);
+	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev,
+							  kraken3_device_names[priv->kind], priv,
+							  &kraken3_chip_info, kraken3_groups);
 	if (IS_ERR(priv->hwmon_dev)) {
 		ret = PTR_ERR(priv->hwmon_dev);
 		hid_err(hdev, "hwmon registration failed with %d\n", ret);
