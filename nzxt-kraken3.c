@@ -323,12 +323,14 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
-			ret = kraken3_write_fixed_duty(priv, val, channel);
-			if (ret < 0)
-				return ret;
-
 			/* Remember the last set fixed duty for channel */
 			priv->channel_info[channel].fixed_duty = val;
+
+			if (priv->channel_info[channel].mode == manual) {
+				ret = kraken3_write_fixed_duty(priv, val, channel);
+				if (ret < 0)
+					return ret;
+			}
 			break;
 		case hwmon_pwm_enable:
 			if (val < 0 || val > 2)
