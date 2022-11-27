@@ -25,13 +25,15 @@ and duty of an optionally connected fan, with the same PWM control capabilities.
 
 Pump and fan duty control mode can be set through pwm[1-2]_enable, where 1 is
 for the manual control mode and 2 is for the liquid temp to PWM curve mode.
-Writing a 0 disables control through the driver.
+Writing a 0 disables control of the channel through the driver after setting its
+duty to 100%.
 
 The temperature of the curves relates to the fixed [20-59] range, correlating to
-the detected liquid temperature. Only PWM values can be set. Setting curve point
-values should be done in moderation - the devices require complete curves to be
-sent for each change; they can lock up or discard the changes if they are too
-numerous at once.
+the detected liquid temperature. Only PWM values (ranging from 0-255) can be set.
+If in curve mode, setting point values should be done in moderation - the devices
+require complete curves to be sent for each change; they can lock up or discard
+the changes if they are too numerous at once. Suggestion is to set them while
+in an another mode, and then apply them by switching to curve.
 
 The addressable RGB LEDs and LCD screen (only on Z-series models) are not
 supported in this driver, but can be controlled through existing userspace tools,
@@ -48,13 +50,13 @@ supports hot swapping.
 Sysfs entries
 -------------
 
-============================== =============================================
+============================== ================================================================
 fan1_input                     Pump speed (in rpm)
 fan2_input                     Fan speed (in rpm)
 temp1_input                    Coolant temperature (in millidegrees Celsius)
-pwm1                           Pump duty
-pwm1_enable                    Pump duty control mode
-pwm2                           Fan duty
-pwm2_enable                    Fan duty control mode
-temp[1-2]_auto_point[1-40]_pwm Temp-PWM duty curves (for pump/fan)
-============================== =============================================
+pwm1                           Pump duty (value between 0-255)
+pwm1_enable                    Pump duty control mode (0: disabled, 1: manual, 2: curve)
+pwm2                           Fan duty (value between 0-255)
+pwm2_enable                    Fan duty control mode (0: disabled, 1: manual, 2: curve)
+temp[1-2]_auto_point[1-40]_pwm Temp-PWM duty curves (for pump and fan), related to coolant temp
+============================== ================================================================
