@@ -42,6 +42,11 @@ Vagrant.configure("2") do |config|
     libvirt.cpus = CPUS
     libvirt.memory = MEMORY
 
+    # Error while creating domain: Error saving the server: Call to virDomainDefineXML failed:
+    # unsupported configuration: chardev 'spicevmc' not supported without spice graphics
+    libvirt.graphics_type = "spice"
+    libvirt.channel :type => "spicevmc", :target_name => "com.redhat.spice.0", :target_type => "virtio"
+
     libvirt.usb_controller :model => "qemu-xhci"
     libvirt.redirdev :type => "spicevmc"
 
