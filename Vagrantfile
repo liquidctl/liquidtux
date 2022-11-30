@@ -21,13 +21,9 @@ USB_IDS = [
 ]
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "Fedora-Cloud-Base-Vagrant-34"
-  config.vm.box_download_checksum_type = "sha256"
+  config.vm.box = "fedora/37-cloud-base"
 
   config.vm.provider "virtualbox" do |virtualbox, override|
-    override.vm.box_url = "https://download.fedoraproject.org/pub/fedora/linux/releases/34/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-34-1.2.x86_64.vagrant-virtualbox.box"
-    override.vm.box_download_checksum = "e72d9987c61d58108910fab700e8bdf349e69d2e158037a10b07706a68446fda"
-
     virtualbox.cpus = CPUS
     virtualbox.memory = MEMORY
     virtualbox.default_nic_type = "virtio"
@@ -43,9 +39,6 @@ Vagrant.configure("2") do |config|
   end
 
   config.vm.provider "libvirt" do |libvirt, override|
-    override.vm.box_url = "https://download.fedoraproject.org/pub/fedora/linux/releases/34/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-34-1.2.x86_64.vagrant-libvirt.box"
-    override.vm.box_download_checksum = "3d9c00892253c869bffcf2e84ddd308e90d5c7a5928b3bc00e0563a4bec55849"
-
     libvirt.cpus = CPUS
     libvirt.memory = MEMORY
 
