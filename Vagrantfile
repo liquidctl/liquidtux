@@ -53,6 +53,11 @@ Vagrant.configure("2") do |config|
     USB_IDS.each do |usb_id|
       libvirt.usb usb_id.merge :startupPolicy => "optional"
     end
+
+    if Vagrant.has_plugin?("vagrant-libvirt", "> 0.5.3")
+      libvirt.channel :type => "unix", :target_name => "org.qemu.guest_agent.0", :target_type => "virtio"
+      libvirt.qemu_use_agent = true
+    end
   end
 
   config.vm.provision "ansible" do |ansible|
