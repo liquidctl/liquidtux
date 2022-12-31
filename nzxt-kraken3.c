@@ -734,7 +734,6 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 
 	return 0;
 }
-
 DEFINE_SHOW_ATTRIBUTE(firmware_version);
 
 static void kraken3_debugfs_init(struct kraken3_data *priv)
