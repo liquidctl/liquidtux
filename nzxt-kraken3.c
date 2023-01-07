@@ -39,20 +39,23 @@ static const char *const kraken3_device_names[] = {
 #define PUMP_DUTY_MIN		20	/* In percent */
 #define CURVE_DUTY_MAX		100	/* In percent */
 
-/* Report offsets for Kraken X53 and Z53 */
+/* Sensor report offsets for Kraken X53 and Z53 */
 #define TEMP_SENSOR_START_OFFSET	15
 #define TEMP_SENSOR_END_OFFSET		16
 #define PUMP_SPEED_OFFSET		17
 #define PUMP_DUTY_OFFSET		19
+
+/* Firmware version report offset for Kraken X53 and Z53 */
 #define FIRMWARE_VERSION_OFFSET		17
 
-/* Report offsets for Kraken Z53 */
+/* Sensor report offsets for Kraken Z53 */
 #define Z53_FAN_SPEED_OFFSET		23
 #define Z53_FAN_DUTY_OFFSET		25
 
 /* Report offsets for control commands for Kraken X53 and Z53 */
 #define SET_DUTY_ID_OFFSET		1
 
+/* Control commands and their lengths for Kraken X53 and Z53 */
 static u8 set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL };
 static u8 finish_init_cmd[] = { 0x70, 0x01 };
 static u8 get_fw_version_cmd[] = { 0x10, 0x01 };
@@ -731,7 +734,6 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 
 	return 0;
 }
-
 DEFINE_SHOW_ATTRIBUTE(firmware_version);
 
 static void kraken3_debugfs_init(struct kraken3_data *priv)

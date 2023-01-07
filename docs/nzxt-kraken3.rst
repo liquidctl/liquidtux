@@ -20,7 +20,7 @@ Description
 This driver enables hardware monitoring support for NZXT Kraken X53/X63/X73 and
 Z53/Z63/Z73 all-in-one CPU liquid coolers. All models expose liquid temperature
 and pump speed (in RPM), as well as PWM control (either as a fixed value
-or through a temp-PWM curve). The Z-series models additionaly expose the speed
+or through a temp-PWM curve). The Z-series models additionally expose the speed
 and duty of an optionally connected fan, with the same PWM control capabilities.
 
 Pump and fan duty control mode can be set through pwm[1-2]_enable, where 1 is
