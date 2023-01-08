@@ -37,7 +37,6 @@ static const char *const kraken3_device_names[] = {
 #define STATUS_VALIDITY		(4 * STATUS_INTERVAL)	/* seconds */
 #define CUSTOM_CURVE_POINTS	40	/* For temps from 20C to 59C (critical temp) */
 #define PUMP_DUTY_MIN		20	/* In percent */
-#define CURVE_DUTY_MAX		100	/* In percent */
 
 /* Sensor report offsets for Kraken X53 and Z53 */
 #define TEMP_SENSOR_START_OFFSET	15
@@ -197,9 +196,9 @@ static int kraken3_pwm_to_percent(long val, int channel)
 
 	percent_value = DIV_ROUND_CLOSEST(val * 100, 255);
 
-	/* Pump has a minimum duty value in addition to the max */
-	if ((channel == 0 && percent_value < PUMP_DUTY_MIN) || percent_value > CURVE_DUTY_MAX)
-		return -EINVAL;
+	/* Bring up pump duty to min value if needed */
+	if (channel == 0 && percent_value < PUMP_DUTY_MIN)
+		percent_value = PUMP_DUTY_MIN;
 
 	return percent_value;
 }
