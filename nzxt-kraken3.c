@@ -86,7 +86,7 @@ struct kraken3_channel_info {
 
 	/* Both values are PWM */
 	u16 reported_duty;
-	u16 fixed_duty;	/* Manually set fixed duty */
+	u16 fixed_duty;		/* Manually set fixed duty */
 
 	u8 pwm_points[CUSTOM_CURVE_POINTS];
 };
@@ -237,9 +237,6 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 		}
 	}
 
-	//if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
-	//	return -ENODATA;
-
 	switch (type) {
 	case hwmon_temp:
 		*val = priv->temp_input[channel];
@@ -352,8 +349,6 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 				/*
 				 * Lock onto this value and report it until next interrupt status
 				 * report is received, so userspace tools can continue to work
-				 *
-				 * TODO: X53 only for now
 				 */
 				spin_lock_bh(&pwm_write_lock);
 				priv->channel_info[channel].reported_duty = val;
@@ -429,9 +424,8 @@ static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_att
 	if (priv->channel_info[dev_attr->nr].mode == curve) {
 		/* Apply the curve */
 		ret =
-			kraken3_write_curve(priv,
-					    priv->channel_info[dev_attr->nr].pwm_points,
-					    dev_attr->nr);
+		    kraken3_write_curve(priv,
+					priv->channel_info[dev_attr->nr].pwm_points, dev_attr->nr);
 		if (ret < 0)
 			return ret;
 	}
@@ -696,7 +690,8 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	/* Additional readings for Z53 */
 	if (priv->kind == Z53) {
 		priv->fan_input[1] = get_unaligned_le16(data + Z53_FAN_SPEED_OFFSET);
-		priv->channel_info[1].reported_duty = kraken3_percent_to_pwm(data[Z53_FAN_DUTY_OFFSET]);
+		priv->channel_info[1].reported_duty =
+		    kraken3_percent_to_pwm(data[Z53_FAN_DUTY_OFFSET]);
 
 		complete(&priv->z53_status_processed);
 	}
