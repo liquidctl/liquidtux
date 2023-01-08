@@ -15,6 +15,7 @@
 #include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/spinlock.h>
 #include <asm/unaligned.h>
 
 #define USB_VENDOR_ID_NZXT		0x1e71
@@ -82,9 +83,20 @@ static const char *const kraken3_fan_label[] = {
 
 struct kraken3_channel_info {
 	enum pwm_enable mode;
-	u16 fixed_duty;
+
+	/* Both values are PWM */
+	u16 reported_duty;
+	u16 fixed_duty;	/* Manually set fixed duty */
+
 	u8 pwm_points[CUSTOM_CURVE_POINTS];
 };
+
+/*
+ * Used for disabling report interrupts when writing PWM values to device
+ * so that they are reported as written until the next interrupt. This is
+ * needed for userspace utilities to continue to function
+ */
+static DEFINE_SPINLOCK(pwm_write_lock);
 
 struct kraken3_data {
 	struct hid_device *hdev;
@@ -100,7 +112,6 @@ struct kraken3_data {
 	/* Sensor values */
 	s32 temp_input[1];
 	u16 fan_input[2];
-	u8 duty_input[2];
 
 	enum kinds kind;
 	u8 firmware_version[3];
@@ -237,7 +248,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 			*val = priv->channel_info[channel].mode;
 			break;
 		case hwmon_pwm_input:
-			*val = kraken3_percent_to_pwm(priv->duty_input[channel]);
+			*val = priv->channel_info[channel].reported_duty;
 			break;
 		default:
 			break;
@@ -288,12 +299,12 @@ static int kraken3_write_curve(struct kraken3_data *priv, u8 *curve_array, int c
 
 static int kraken3_write_fixed_duty(struct kraken3_data *priv, long val, int channel)
 {
-	int ret, percent_value, i;
+	int ret, percent_val, i;
 	u8 fixed_curve_points[CUSTOM_CURVE_POINTS];
 
-	percent_value = kraken3_pwm_to_percent(val, channel);
-	if (percent_value < 0)
-		return percent_value;
+	percent_val = kraken3_pwm_to_percent(val, channel);
+	if (percent_val < 0)
+		return percent_val;
 
 	/*
 	 * The devices can only control the duty through a curve.
@@ -305,7 +316,7 @@ static int kraken3_write_fixed_duty(struct kraken3_data *priv, long val, int cha
 
 	/* Fill the custom curve with the fixed value we're setting */
 	for (i = 0; i < CUSTOM_CURVE_POINTS - 1; i++)
-		fixed_curve_points[i] = percent_value;
+		fixed_curve_points[i] = percent_val;
 
 	/* Force duty to 100% at critical temp */
 	fixed_curve_points[CUSTOM_CURVE_POINTS - 1] = 100;
@@ -332,6 +343,16 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 				ret = kraken3_write_fixed_duty(priv, val, channel);
 				if (ret < 0)
 					return ret;
+
+				/*
+				 * Lock onto this value and report it until next interrupt status
+				 * report is received, so userspace tools can continue to work
+				 *
+				 * TODO: X53 only for now
+				 */
+				spin_lock_bh(&pwm_write_lock);
+				priv->channel_info[channel].reported_duty = val;
+				spin_unlock_bh(&pwm_write_lock);
 			}
 			break;
 		case hwmon_pwm_enable:
@@ -665,12 +686,12 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	    data[TEMP_SENSOR_START_OFFSET] * 1000 + data[TEMP_SENSOR_END_OFFSET] * 100;
 
 	priv->fan_input[0] = get_unaligned_le16(data + PUMP_SPEED_OFFSET);
-	priv->duty_input[0] = data[PUMP_DUTY_OFFSET];
+	priv->channel_info[0].reported_duty = kraken3_percent_to_pwm(data[PUMP_DUTY_OFFSET]);
 
 	/* Additional readings for Z53 */
 	if (priv->kind == Z53) {
 		priv->fan_input[1] = get_unaligned_le16(data + Z53_FAN_SPEED_OFFSET);
-		priv->duty_input[1] = data[Z53_FAN_DUTY_OFFSET];
+		priv->channel_info[1].reported_duty = kraken3_percent_to_pwm(data[Z53_FAN_DUTY_OFFSET]);
 
 		complete(&priv->z53_status_processed);
 	}
