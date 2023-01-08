@@ -220,20 +220,25 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 	int ret;
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
-	if (priv->kind == Z53) {
-		/* Request status on demand */
-		reinit_completion(&priv->z53_status_processed);
+	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ)) {
+		if (priv->kind == Z53) {
+			/* Request status on demand */
+			reinit_completion(&priv->z53_status_processed);
 
-		/* Send command for getting status */
-		ret = kraken3_write_expanded(priv, z53_get_status_cmd, Z53_GET_STATUS_CMD_LENGTH);
-		if (ret < 0)
-			return ret;
+			/* Send command for getting status */
+			ret = kraken3_write_expanded(priv, z53_get_status_cmd,
+						     Z53_GET_STATUS_CMD_LENGTH);
+			if (ret < 0)
+				return ret;
 
-		wait_for_completion(&priv->z53_status_processed);
+			wait_for_completion(&priv->z53_status_processed);
+		} else {
+			return -ENODATA;
+		}
 	}
 
-	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
-		return -ENODATA;
+	//if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
+	//	return -ENODATA;
 
 	switch (type) {
 	case hwmon_temp:
