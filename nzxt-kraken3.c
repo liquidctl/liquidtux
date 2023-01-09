@@ -91,13 +91,6 @@ struct kraken3_channel_info {
 	u8 pwm_points[CUSTOM_CURVE_POINTS];
 };
 
-/*
- * Used for disabling report interrupts when writing PWM values to device
- * so that they are reported as written until the next interrupt. This is
- * needed for userspace utilities to continue to function
- */
-static DEFINE_SPINLOCK(pwm_write_lock);
-
 struct kraken3_data {
 	struct hid_device *hdev;
 	struct device *hwmon_dev;
@@ -350,9 +343,7 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 				 * Lock onto this value and report it until next interrupt status
 				 * report is received, so userspace tools can continue to work
 				 */
-				spin_lock_bh(&pwm_write_lock);
 				priv->channel_info[channel].reported_duty = val;
-				spin_unlock_bh(&pwm_write_lock);
 			}
 			break;
 		case hwmon_pwm_enable:
