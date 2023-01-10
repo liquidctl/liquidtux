@@ -15,7 +15,6 @@
 #include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
-#include <linux/spinlock.h>
 #include <asm/unaligned.h>
 
 #define USB_VENDOR_ID_NZXT		0x1e71
