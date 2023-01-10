@@ -1,0 +1,16 @@
+name: dkms
+
+on: [push, pull_request]
+
+jobs:
+  dkms:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - run: echo "::add-matcher::.github/workflows/gcc-problem-matcher.json"
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y dkms
+      - run: sudo make dkms_install
+      - run: sudo dkms install -m liquidtux -v $(./gitversion.sh)
