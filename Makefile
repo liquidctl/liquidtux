@@ -9,7 +9,3 @@ SOURCES := $(patsubst %.o,%.c,$(obj-m))
 
 checkpatch:
 	$(KDIR)/scripts/checkpatch.pl $(SOURCES)
-
-__pull:
-	cp ~/Code/linux/drivers/hwmon/nzxt*.c ./
-	cp ~/Code/linux/Documentation/hwmon/nzxt*.rst ./docs/
