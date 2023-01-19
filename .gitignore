@@ -7,3 +7,6 @@ Module.symvers
 !.gitignore
 !.github/
 !.checkpatch.conf
+!.gitattributes
+
+dkms.conf

@@ -45,8 +45,21 @@ $ sudo modprobe nzxt-kraken3            # NZXT Kraken X53/X63/X73
 $ sudo modprobe nzxt-smart2             # NZXT Smart Device V2/RGB & Fan Controller
 ```
 
-Those on other distros can experiment with directly using the provided
-[dkms.conf].  It should work with minimal modifications.
+Those on other distros can install DKMS files using `dkms_install` `Makefile`
+target:
+
+```
+$ sudo make dkms_install
+```
+
+Then build and install the modules using:
+
+```
+$ sudo dkms install -m liquidtux -v $(./gitversion.sh)
+```
+
+Also, `dkms_install` supports `DESTDIR` variable, so it could be used for
+building distribution-specific packages.
 
 ## Manually building, inserting and installing
 
