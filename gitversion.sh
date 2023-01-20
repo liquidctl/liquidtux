@@ -10,7 +10,7 @@ ARCHIVE_VERSION='$Format:%(describe:abbrev=7)$'
 
 if [[ "$ARCHIVE_VERSION" == "$"* ]]; then
     # ARCHIVE_VERSION contains the original placeholder - not a git archive
-    git describe --long --abbrev=7
+    git describe --long --abbrev=7 | sed -e 's/^v//'
 else
-    echo "$ARCHIVE_VERSION"
+    echo "$ARCHIVE_VERSION" | sed -e 's/^v//'
 fi
