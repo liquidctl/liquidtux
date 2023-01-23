@@ -97,7 +97,7 @@ struct kraken3_data {
 	struct dentry *debugfs;
 	struct mutex buffer_lock;	/* For locking access to buffer */
 	struct completion fw_version_processed;
-	struct completion z53_status_processed;
+	struct completion status_report_processed;
 
 	u8 *buffer;
 	struct kraken3_channel_info channel_info[2];	/* Pump and fan */
@@ -216,7 +216,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ)) {
 		if (priv->kind == Z53) {
 			/* Request status on demand */
-			reinit_completion(&priv->z53_status_processed);
+			reinit_completion(&priv->status_report_processed);
 
 			/* Send command for getting status */
 			ret = kraken3_write_expanded(priv, z53_get_status_cmd,
@@ -224,7 +224,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 			if (ret < 0)
 				return ret;
 
-			wait_for_completion(&priv->z53_status_processed);
+			wait_for_completion(&priv->status_report_processed);
 		} else {
 			return -ENODATA;
 		}
@@ -667,7 +667,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 		hid_err_once(hdev, "firmware or device is possibly damaged, not parsing reports\n");
 
 		if (priv->kind == Z53)
-			complete(&priv->z53_status_processed);
+			complete(&priv->status_report_processed);
 		return 0;
 	}
 
@@ -684,7 +684,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 		priv->channel_info[1].reported_duty =
 		    kraken3_percent_to_pwm(data[Z53_FAN_DUTY_OFFSET]);
 
-		complete(&priv->z53_status_processed);
+		complete(&priv->status_report_processed);
 	}
 
 	priv->updated = jiffies;
@@ -824,7 +824,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 
 	mutex_init(&priv->buffer_lock);
 	init_completion(&priv->fw_version_processed);
-	init_completion(&priv->z53_status_processed);
+	init_completion(&priv->status_report_processed);
 
 	ret = kraken3_init_device(hdev);
 	if (ret) {
