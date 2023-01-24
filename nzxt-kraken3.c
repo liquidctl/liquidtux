@@ -214,7 +214,18 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
 	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ)) {
-		if (priv->kind == Z53) {
+		if (priv->kind == X53 && !completion_done(&priv->status_report_processed)) {
+			/*
+			 * fancontrol exits if it reads an error code, so instead of returning one
+			 * if we don't yet have a report, wait for the first report to be parsed
+			 * (but up to STATUS_VALIDITY seconds). This does not concern the Z series
+			 * devices, because they send a sensor report only when requested.
+			 */
+			if (!wait_for_completion_timeout
+			    (&priv->status_report_processed,
+			     msecs_to_jiffies(STATUS_VALIDITY * 1000)))
+				return -ENODATA;
+		} else if (priv->kind == Z53) {
 			/* Request status on demand */
 			reinit_completion(&priv->status_report_processed);
 
@@ -666,6 +677,10 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	if (data[TEMP_SENSOR_START_OFFSET] == 0xff && data[TEMP_SENSOR_END_OFFSET] == 0xff) {
 		hid_err_once(hdev, "firmware or device is possibly damaged, not parsing reports\n");
 
+		/* Mark first X-series device report as received, even if faulty */
+		if (priv->kind == X53 && !completion_done(&priv->status_report_processed))
+			complete_all(&priv->status_report_processed);
+
 		if (priv->kind == Z53)
 			complete(&priv->status_report_processed);
 		return 0;
@@ -677,6 +692,10 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 
 	priv->fan_input[0] = get_unaligned_le16(data + PUMP_SPEED_OFFSET);
 	priv->channel_info[0].reported_duty = kraken3_percent_to_pwm(data[PUMP_DUTY_OFFSET]);
+
+	/* Mark first X-series device report as received */
+	if (priv->kind == X53 && !completion_done(&priv->status_report_processed))
+		complete_all(&priv->status_report_processed);
 
 	/* Additional readings for Z53 */
 	if (priv->kind == Z53) {
