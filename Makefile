@@ -8,7 +8,7 @@ modules modules_install clean:
 SOURCES := $(patsubst %.o,%.c,$(obj-m))
 
 checkpatch:
-	$(KDIR)/scripts/checkpatch.pl $(SOURCES)
+	$(KDIR)/scripts/checkpatch.pl $(SOURCES) docs/*.rst
 
 PKGVER ?= $(shell ./gitversion.sh)
 
