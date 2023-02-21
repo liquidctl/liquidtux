@@ -11,9 +11,12 @@ jobs:
           - master
           - v5.15
           - v5.10
-        kconfig:
+        kconfig_pm:
           - "-e CONFIG_PM"
           - "-d CONFIG_PM"
+        kconfig_debug_fs:
+          - "-e CONFIG_DEBUG_FS"
+          - "-d CONFIG_DEBUG_FS"
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
@@ -28,7 +31,7 @@ jobs:
           path: linux
           ref: ${{ matrix.kernel_version }}
       - run: cp src/.github/workflows/all.config linux/
-      - run: scripts/config --file all.config ${{ matrix.kconfig }}
+      - run: scripts/config --file all.config ${{ matrix.kconfig_pm }} ${{ matrix.kconfig_debug_fs }}
         working-directory: linux
       - run: KCONFIG_ALLCONFIG=1 make allnoconfig
         working-directory: linux
