@@ -4,8 +4,10 @@ on: [push, pull_request]
 
 jobs:
   checkpatch:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y codespell
       - uses: actions/checkout@v3
         with:
           path: src
