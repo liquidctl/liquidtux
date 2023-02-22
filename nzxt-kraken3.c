@@ -57,7 +57,7 @@ static const char *const kraken3_device_names[] = {
 /* Control commands and their lengths for Kraken X53 and Z53 */
 static u8 set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL };
 static u8 finish_init_cmd[] = { 0x70, 0x01 };
-static u8 get_fw_version_cmd[] = { 0x10, 0x01 };
+static u8 __maybe_unused get_fw_version_cmd[] = { 0x10, 0x01 };
 static u8 set_pump_duty_cmd_header[] = { 0x72, 0x00, 0x00, 0x00 };
 static u8 z53_get_status_cmd[] = { 0x74, 0x01 };
 
