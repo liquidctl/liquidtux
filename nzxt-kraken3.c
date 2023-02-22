@@ -55,11 +55,11 @@ static const char *const kraken3_device_names[] = {
 #define SET_DUTY_ID_OFFSET		1
 
 /* Control commands and their lengths for Kraken X53 and Z53 */
-static u8 set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL };
-static u8 finish_init_cmd[] = { 0x70, 0x01 };
-static u8 __maybe_unused get_fw_version_cmd[] = { 0x10, 0x01 };
-static u8 set_pump_duty_cmd_header[] = { 0x72, 0x00, 0x00, 0x00 };
-static u8 z53_get_status_cmd[] = { 0x74, 0x01 };
+static const u8 set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL };
+static const u8 finish_init_cmd[] = { 0x70, 0x01 };
+static const u8 __maybe_unused get_fw_version_cmd[] = { 0x10, 0x01 };
+static const u8 set_pump_duty_cmd_header[] = { 0x72, 0x00, 0x00, 0x00 };
+static const u8 z53_get_status_cmd[] = { 0x74, 0x01 };
 
 #define SET_INTERVAL_CMD_LENGTH			5
 #define FINISH_INIT_CMD_LENGTH			2
@@ -171,7 +171,7 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
  * Writes the command to the device with the rest of the report (up to 64 bytes) filled
  * with zeroes
  */
-static int kraken3_write_expanded(struct kraken3_data *priv, u8 *cmd, int cmd_length)
+static int kraken3_write_expanded(struct kraken3_data *priv, const u8 *cmd, int cmd_length)
 {
 	int ret;
 
