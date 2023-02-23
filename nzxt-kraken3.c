@@ -33,8 +33,7 @@ static const char *const kraken3_device_names[] = {
 #define DRIVER_NAME		"nzxt_kraken3"
 #define STATUS_REPORT_ID	0x75
 #define FIRMWARE_REPORT_ID	0x11
-#define STATUS_INTERVAL		1	/* seconds */
-#define STATUS_VALIDITY		(4 * STATUS_INTERVAL)	/* seconds */
+#define STATUS_VALIDITY		4	/* Seconds, equivalent to period of eight status reports */
 #define CUSTOM_CURVE_POINTS	40	/* For temps from 20C to 59C (critical temp) */
 #define PUMP_DUTY_MIN		20	/* In percent */
 
@@ -55,7 +54,9 @@ static const char *const kraken3_device_names[] = {
 #define SET_DUTY_ID_OFFSET		1
 
 /* Control commands and their lengths for Kraken X53 and Z53 */
-static const u8 set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, STATUS_INTERVAL };
+
+/* Last byte sets the report interval at 0.5s */
+static const u8 set_interval_cmd[] = { 0x70, 0x02, 0x01, 0xB8, 1 };
 static const u8 finish_init_cmd[] = { 0x70, 0x01 };
 static const u8 __maybe_unused get_fw_version_cmd[] = { 0x10, 0x01 };
 static const u8 set_pump_duty_cmd_header[] = { 0x72, 0x00, 0x00, 0x00 };
