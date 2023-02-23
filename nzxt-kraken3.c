@@ -15,6 +15,7 @@
 #include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/wait.h>
 #include <asm/unaligned.h>
 
 #define USB_VENDOR_ID_NZXT		0x1e71
@@ -96,6 +97,16 @@ struct kraken3_data {
 	struct device *hwmon_dev;
 	struct dentry *debugfs;
 	struct mutex buffer_lock;	/* For locking access to buffer */
+	/* Used to ensure that only one reader requests a Z53 status report */
+	struct mutex z53_status_request_lock;
+	/*
+	 * For retaining returned error code in case of failure with
+	 * multiple readers present during status report refresh.
+	 */
+	int z53_status_request_ret;
+	/* For delaying multiple readers until a Z53 status report is received */
+	wait_queue_head_t z53_reader_wq;
+	bool z53_status_processed;
 	struct completion fw_version_processed;
 	struct completion status_report_processed;
 
@@ -211,6 +222,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 			long *val)
 {
 	int ret;
+	ulong remaining_time;	/* Used for priv->status_report_processed completion with timeout */
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
 	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ)) {
@@ -226,16 +238,49 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 			     msecs_to_jiffies(STATUS_VALIDITY * 1000)))
 				return -ENODATA;
 		} else if (priv->kind == Z53) {
-			/* Request status on demand */
-			reinit_completion(&priv->status_report_processed);
+			/* Ensure that only one of the readers requests status */
+			if (mutex_trylock(&priv->z53_status_request_lock)) {
+				/* Reset ret value for other readers */
+				priv->z53_status_request_ret = 0;
+				priv->z53_status_processed = false;
 
-			/* Send command for getting status */
-			ret = kraken3_write_expanded(priv, z53_get_status_cmd,
-						     Z53_GET_STATUS_CMD_LENGTH);
-			if (ret < 0)
-				return ret;
+				/* Send command for getting status */
+				ret = kraken3_write_expanded(priv, z53_get_status_cmd,
+							     Z53_GET_STATUS_CMD_LENGTH);
+				if (ret < 0) {
+					priv->z53_status_request_ret = ret;
+					goto signal_other_readers;
+				}
 
-			wait_for_completion(&priv->status_report_processed);
+				/* Wait for completion from kraken3_raw_event() */
+				remaining_time =
+				    wait_for_completion_interruptible_timeout
+					(&priv->status_report_processed,
+					 msecs_to_jiffies(STATUS_VALIDITY * 1000));
+
+				/* Didn't receive status report in time or was interrupted? */
+				if (remaining_time == 0 || remaining_time == -ERESTARTSYS) {
+					ret = -ENODATA;
+					priv->z53_status_request_ret = ret;
+				}
+signal_other_readers:
+				/* Let other readers proceed */
+				priv->z53_status_processed = true;
+				wake_up_interruptible_all(&priv->z53_reader_wq);
+
+				mutex_unlock(&priv->z53_status_request_lock);
+				if (ret < 0)
+					return ret;
+			} else {
+				/* Wait for the main reader */
+				if (wait_event_interruptible
+				    (priv->z53_reader_wq, priv->z53_status_processed))
+					return -ENODATA;
+
+				/* Return saved error code if reader failed in some way */
+				if (priv->z53_status_request_ret < 0)
+					return priv->z53_status_request_ret;
+			}
 		} else {
 			return -ENODATA;
 		}
@@ -842,6 +887,8 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	}
 
 	mutex_init(&priv->buffer_lock);
+	mutex_init(&priv->z53_status_request_lock);
+	init_waitqueue_head(&priv->z53_reader_wq);
 	init_completion(&priv->fw_version_processed);
 	init_completion(&priv->status_report_processed);
 
