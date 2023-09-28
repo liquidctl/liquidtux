@@ -722,12 +722,14 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	if (data[TEMP_SENSOR_START_OFFSET] == 0xff && data[TEMP_SENSOR_END_OFFSET] == 0xff) {
 		hid_err_once(hdev, "firmware or device is possibly damaged, not parsing reports\n");
 
-		/* Mark first X-series device report as received, even if faulty */
-		if (priv->kind == X53 && !completion_done(&priv->status_report_processed))
+		/*
+		 * Mark first X-series device report as received,
+		 * as well as all for Z-series, if faulty.
+		 */
+		if ((priv->kind == X53 && !completion_done(&priv->status_report_processed)) ||
+		    priv->kind == Z53)
 			complete_all(&priv->status_report_processed);
 
-		if (priv->kind == Z53)
-			complete(&priv->status_report_processed);
 		return 0;
 	}
 
