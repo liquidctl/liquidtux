@@ -34,7 +34,7 @@ static const char *const kraken3_device_names[] = {
 #define DRIVER_NAME		"nzxt_kraken3"
 #define STATUS_REPORT_ID	0x75
 #define FIRMWARE_REPORT_ID	0x11
-#define STATUS_VALIDITY		4	/* Seconds, equivalent to period of eight status reports */
+#define STATUS_VALIDITY		4000	/* In ms, equivalent to period of eight status reports */
 #define CUSTOM_CURVE_POINTS	40	/* For temps from 20C to 59C (critical temp) */
 #define PUMP_DUTY_MIN		20	/* In percent */
 
@@ -225,7 +225,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 	ulong remaining_time;	/* Used for priv->status_report_processed completion with timeout */
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
-	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ)) {
+	if (time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
 		if (priv->kind == X53 && !completion_done(&priv->status_report_processed)) {
 			/*
 			 * fancontrol exits if it reads an error code, so instead of returning one
@@ -235,7 +235,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 			 */
 			if (wait_for_completion_interruptible_timeout
 			    (&priv->status_report_processed,
-			     msecs_to_jiffies(STATUS_VALIDITY * 1000)) <= 0)
+			     msecs_to_jiffies(STATUS_VALIDITY)) <= 0)
 				return -ENODATA;
 		} else if (priv->kind == Z53) {
 			/* Ensure that only one of the readers requests status */
@@ -256,7 +256,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 				remaining_time =
 				    wait_for_completion_interruptible_timeout
 					(&priv->status_report_processed,
-					 msecs_to_jiffies(STATUS_VALIDITY * 1000));
+					 msecs_to_jiffies(STATUS_VALIDITY));
 
 				/* Didn't receive status report in time or was interrupted? */
 				if (remaining_time == 0 || remaining_time == -ERESTARTSYS) {
@@ -847,7 +847,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	 * the initial empty data invalid for kraken3_read without the need for
 	 * a special case there.
 	 */
-	priv->updated = jiffies - STATUS_VALIDITY * HZ;
+	priv->updated = jiffies - msecs_to_jiffies(STATUS_VALIDITY);
 
 	ret = hid_parse(hdev);
 	if (ret) {
