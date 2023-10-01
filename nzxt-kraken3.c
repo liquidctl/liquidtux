@@ -34,7 +34,7 @@ static const char *const kraken3_device_names[] = {
 #define DRIVER_NAME		"nzxt_kraken3"
 #define STATUS_REPORT_ID	0x75
 #define FIRMWARE_REPORT_ID	0x11
-#define STATUS_VALIDITY		4000	/* In ms, equivalent to period of eight status reports */
+#define STATUS_VALIDITY		2000	/* In ms, equivalent to period of four status reports */
 #define CUSTOM_CURVE_POINTS	40	/* For temps from 20C to 59C (critical temp) */
 #define PUMP_DUTY_MIN		20	/* In percent */
 
