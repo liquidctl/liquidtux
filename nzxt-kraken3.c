@@ -272,9 +272,10 @@ signal_other_readers:
 				if (ret < 0)
 					return ret;
 			} else {
-				/* Wait for the main reader */
-				if (wait_event_interruptible
-				    (priv->z53_reader_wq, priv->z53_status_processed))
+				/* Wait for the main reader with a timeout of 2 * STATUS_VALIDITY */
+				if (wait_event_interruptible_timeout
+				    (priv->z53_reader_wq, priv->z53_status_processed,
+				     msecs_to_jiffies(2 * STATUS_VALIDITY)) <= 0)
 					return -ENODATA;
 
 				/* Return saved error code if reader failed in some way */
