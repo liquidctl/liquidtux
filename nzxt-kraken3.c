@@ -794,8 +794,6 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 	int ret;
 	struct kraken3_data *priv = seqf->private;
 
-	reinit_completion(&priv->fw_version_processed);
-
 	ret = kraken3_write_expanded(priv, get_fw_version_cmd, GET_FW_VERSION_CMD_LENGTH);
 	if (ret < 0)
 		return -ENODATA;
