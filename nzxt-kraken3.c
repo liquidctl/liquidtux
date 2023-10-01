@@ -233,9 +233,9 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 			 * (but up to STATUS_VALIDITY seconds). This does not concern the Z series
 			 * devices, because they send a sensor report only when requested.
 			 */
-			if (!wait_for_completion_timeout
+			if (wait_for_completion_interruptible_timeout
 			    (&priv->status_report_processed,
-			     msecs_to_jiffies(STATUS_VALIDITY * 1000)))
+			     msecs_to_jiffies(STATUS_VALIDITY * 1000)) <= 0)
 				return -ENODATA;
 		} else if (priv->kind == Z53) {
 			/* Ensure that only one of the readers requests status */
@@ -801,7 +801,8 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 	 * The response to this request that the device sends is only catchable in
 	 * kraken3_raw_event(), so we have to wait until it's processed there.
 	 */
-	wait_for_completion(&priv->fw_version_processed);
+	if (wait_for_completion_interruptible(&priv->fw_version_processed))
+		return -ENODATA;
 
 	seq_printf(seqf, "%u.%u.%u\n", priv->firmware_version[0], priv->firmware_version[1],
 		   priv->firmware_version[2]);
