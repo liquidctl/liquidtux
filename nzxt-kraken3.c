@@ -726,8 +726,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 		 * Mark first X-series device report as received,
 		 * as well as all for Z-series, if faulty.
 		 */
-		if ((priv->kind == X53 && !completion_done(&priv->status_report_processed)) ||
-		    priv->kind == Z53)
+		if (priv->kind != X53 || !completion_done(&priv->status_report_processed))
 			complete_all(&priv->status_report_processed);
 
 		return 0;
