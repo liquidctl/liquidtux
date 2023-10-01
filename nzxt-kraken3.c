@@ -181,7 +181,7 @@ static umode_t kraken3_is_visible(const void *data, enum hwmon_sensor_types type
 
 /*
  * Writes the command to the device with the rest of the report (up to 64 bytes) filled
- * with zeroes
+ * with zeroes.
  */
 static int kraken3_write_expanded(struct kraken3_data *priv, const u8 *cmd, int cmd_length)
 {
@@ -397,7 +397,7 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 
 				/*
 				 * Lock onto this value and report it until next interrupt status
-				 * report is received, so userspace tools can continue to work
+				 * report is received, so userspace tools can continue to work.
 				 */
 				priv->channel_info[channel].reported_duty = val;
 			}
@@ -800,7 +800,7 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 
 	/*
 	 * The response to this request that the device sends is only catchable in
-	 * kraken3_raw_event(), so we have to wait until it's processed there
+	 * kraken3_raw_event(), so we have to wait until it's processed there.
 	 */
 	wait_for_completion(&priv->fw_version_processed);
 
