@@ -218,73 +218,81 @@ static int kraken3_pwm_to_percent(long val, int channel)
 	return percent_value;
 }
 
+static int kraken3_read_x53(struct kraken3_data *priv)
+{
+	int ret;
+
+	if (completion_done(&priv->status_report_processed))
+		/*
+		 * We're here because data is stale. This means that sensor reports haven't
+		 * been received for some time in kraken3_raw_event(). On X-series sensor data
+		 * can't be manually requested, so return an error.
+		 */
+		return -ENODATA;
+
+	/*
+	 * Data needs to be read, but a sensor report wasn't yet received. It's usually
+	 * fancontrol that requests data this early and it exits if it reads an error code.
+	 * So, wait for the first report to be parsed (but up to STATUS_VALIDITY).
+	 * This does not concern the Z series devices, because they send a sensor report
+	 * only when requested.
+	 */
+	ret = wait_for_completion_interruptible_timeout(&priv->status_report_processed,
+							msecs_to_jiffies(STATUS_VALIDITY));
+	if (ret == 0)
+		return -ETIMEDOUT;
+	else if (ret < 0)
+		return ret;
+
+	/* The first sensor report was parsed on time and reading can continue */
+	return 0;
+}
+
+static int kraken3_read_z53(struct kraken3_data *priv)
+{
+	int ret = mutex_lock_interruptible(&priv->z53_status_request_lock);
+
+	if (ret < 0)
+		return ret;
+
+	if (!time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
+		/* Data is up to date */
+		goto unlock_and_return;
+	}
+
+	/* Send command for getting status */
+	ret = kraken3_write_expanded(priv, z53_get_status_cmd, Z53_GET_STATUS_CMD_LENGTH);
+	if (ret < 0)
+		goto unlock_and_return;
+
+	/* Wait for completion from kraken3_raw_event() */
+	ret = wait_for_completion_interruptible_timeout(&priv->status_report_processed,
+							msecs_to_jiffies(STATUS_VALIDITY));
+	if (ret == 0)
+		ret = -ETIMEDOUT;
+
+unlock_and_return:
+	mutex_unlock(&priv->z53_status_request_lock);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
 static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
 			long *val)
 {
 	int ret;
-	ulong remaining_time;	/* Used for priv->status_report_processed completion with timeout */
 	struct kraken3_data *priv = dev_get_drvdata(dev);
 
 	if (time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
-		if (priv->kind == X53 && !completion_done(&priv->status_report_processed)) {
-			/*
-			 * fancontrol exits if it reads an error code, so instead of returning one
-			 * if we don't yet have a report, wait for the first report to be parsed
-			 * (but up to STATUS_VALIDITY seconds). This does not concern the Z series
-			 * devices, because they send a sensor report only when requested.
-			 */
-			if (wait_for_completion_interruptible_timeout
-			    (&priv->status_report_processed,
-			     msecs_to_jiffies(STATUS_VALIDITY)) <= 0)
-				return -ENODATA;
-		} else if (priv->kind == Z53) {
-			/* Ensure that only one of the readers requests status */
-			if (mutex_trylock(&priv->z53_status_request_lock)) {
-				/* Reset ret value for other readers */
-				priv->z53_status_request_ret = 0;
-				priv->z53_status_processed = false;
+		if (priv->kind == X53)
+			ret = kraken3_read_x53(priv);
+		else
+			ret = kraken3_read_z53(priv);
 
-				/* Send command for getting status */
-				ret = kraken3_write_expanded(priv, z53_get_status_cmd,
-							     Z53_GET_STATUS_CMD_LENGTH);
-				if (ret < 0) {
-					priv->z53_status_request_ret = ret;
-					goto signal_other_readers;
-				}
-
-				/* Wait for completion from kraken3_raw_event() */
-				remaining_time =
-				    wait_for_completion_interruptible_timeout
-					(&priv->status_report_processed,
-					 msecs_to_jiffies(STATUS_VALIDITY));
-
-				/* Didn't receive status report in time or was interrupted? */
-				if (remaining_time == 0 || remaining_time == -ERESTARTSYS) {
-					ret = -ENODATA;
-					priv->z53_status_request_ret = ret;
-				}
-signal_other_readers:
-				/* Let other readers proceed */
-				priv->z53_status_processed = true;
-				wake_up_interruptible_all(&priv->z53_reader_wq);
-
-				mutex_unlock(&priv->z53_status_request_lock);
-				if (ret < 0)
-					return ret;
-			} else {
-				/* Wait for the main reader with a timeout of 2 * STATUS_VALIDITY */
-				if (wait_event_interruptible_timeout
-				    (priv->z53_reader_wq, priv->z53_status_processed,
-				     msecs_to_jiffies(2 * STATUS_VALIDITY)) <= 0)
-					return -ENODATA;
-
-				/* Return saved error code if reader failed in some way */
-				if (priv->z53_status_request_ret < 0)
-					return priv->z53_status_request_ret;
-			}
-		} else {
-			return -ENODATA;
-		}
+		if (ret < 0)
+			return ret;
 	}
 
 	switch (type) {
@@ -750,7 +758,7 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 		priv->channel_info[1].reported_duty =
 		    kraken3_percent_to_pwm(data[Z53_FAN_DUTY_OFFSET]);
 
-		complete(&priv->status_report_processed);
+		complete_all(&priv->status_report_processed);
 	}
 
 	priv->updated = jiffies;
