@@ -99,6 +99,11 @@ struct kraken3_data {
 	struct mutex buffer_lock;	/* For locking access to buffer */
 	struct mutex z53_status_request_lock;
 	struct completion fw_version_processed;
+	/*
+	 * For X53 devices, tracks whether an initial (one) sensor report was received to
+	 * make fancontrol not bail outright. For Z53 devices, whether a status report
+	 * was processed after requesting one.
+	 */
 	struct completion status_report_processed;
 
 	u8 *buffer;
