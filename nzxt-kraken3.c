@@ -108,6 +108,7 @@ struct kraken3_data {
 
 	u8 *buffer;
 	struct kraken3_channel_info channel_info[2];	/* Pump and fan */
+	bool is_device_faulty;
 
 	/* Sensor values */
 	s32 temp_input[1];
@@ -286,6 +287,9 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 			ret = kraken3_read_x53(priv);
 		else
 			ret = kraken3_read_z53(priv);
+
+		if (priv->is_device_faulty)
+			return -ENODATA;
 
 		if (ret < 0)
 			return ret;
@@ -731,11 +735,16 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 		 * Mark first X-series device report as received,
 		 * as well as all for Z-series, if faulty.
 		 */
-		if (priv->kind != X53 || !completion_done(&priv->status_report_processed))
+		if (priv->kind != X53 || !completion_done(&priv->status_report_processed)) {
+			priv->is_device_faulty = true;
 			complete_all(&priv->status_report_processed);
+		}
 
 		return 0;
 	}
+
+	/* Received normal data */
+	priv->is_device_faulty = false;
 
 	/* Temperature and fan sensor readings */
 	priv->temp_input[0] =
