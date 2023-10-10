@@ -35,6 +35,10 @@ require complete curves to be sent for each change; they can lock up or discard
 the changes if they are too numerous at once. Suggestion is to set them while
 in an another mode, and then apply them by switching to curve.
 
+The devices can report if they are faulty. The driver supports that situation
+and will issue a warning. This can also happen when the USB cable is connected,
+but SATA power is not.
+
 The addressable RGB LEDs and LCD screen (only on Z-series models) are not
 supported in this driver, but can be controlled through existing userspace tools,
 such as `liquidctl`_.
