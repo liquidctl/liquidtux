@@ -11,6 +11,8 @@ USB_IDS = [
   { :vendor => "0x1e71", :product => "0x170e" },
   # nzxt-kraken3
   { :vendor => "0x1e71", :product => "0x2007" },
+  { :vendor => "0x1e71", :product => "0x2014" },
+  { :vendor => "0x1e71", :product => "0x3008" },
   # nzxt-smart2
   { :vendor => "0x1e71", :product => "0x2006" },
   { :vendor => "0x1e71", :product => "0x200d" },
