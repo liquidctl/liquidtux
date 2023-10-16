@@ -15,6 +15,7 @@
 #include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/spinlock.h>
 #include <linux/wait.h>
 #include <asm/unaligned.h>
 
@@ -105,6 +106,8 @@ struct kraken3_data {
 	 * was processed after requesting one.
 	 */
 	struct completion status_report_processed;
+	/* For locking the above completion */
+	spinlock_t status_completion_lock;
 
 	u8 *buffer;
 	struct kraken3_channel_info channel_info[2];	/* Pump and fan */
@@ -256,6 +259,14 @@ static int kraken3_read_z53(struct kraken3_data *priv)
 		/* Data is up to date */
 		goto unlock_and_return;
 	}
+
+	/*
+	 * Disable interrupts for a moment to safely reinit the completion,
+	 * as hidraw calls could have allowed one or more readers to complete.
+	 */
+	spin_lock_bh(&priv->status_completion_lock);
+	reinit_completion(&priv->status_report_processed);
+	spin_unlock_bh(&priv->status_completion_lock);
 
 	/* Send command for getting status */
 	ret = kraken3_write_expanded(priv, z53_get_status_cmd, Z53_GET_STATUS_CMD_LENGTH);
@@ -904,6 +915,7 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	mutex_init(&priv->z53_status_request_lock);
 	init_completion(&priv->fw_version_processed);
 	init_completion(&priv->status_report_processed);
+	spin_lock_init(&priv->status_completion_lock);
 
 	ret = kraken3_init_device(hdev);
 	if (ret) {
