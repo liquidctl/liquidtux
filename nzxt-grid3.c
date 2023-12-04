@@ -61,7 +61,7 @@
 #define PWM_FAN			BIT(1)
 
 /**
- * grid3_channel_status - Last known data for a given channel.
+ * struct grid3_channel_status - Last known data for a given channel.
  * @rpms:	Fan speed in rpm.
  * @centiamps:	Fan current draw in centiamperes.
  * @centivolts:	Fan supply voltage in centivolts.
@@ -81,7 +81,7 @@ struct grid3_channel_status {
 };
 
 /**
- * grid3_data - Driver private data.
+ * struct grid3_data - Driver private data.
  * @hid_dev:	HID device.
  * @hwmon_dev:	HWMON device.
  * @lock:	Protects the output buffer @out and writes to @status[].pwm.
