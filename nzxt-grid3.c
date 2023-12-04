@@ -396,7 +396,7 @@ static int grid3_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	ret = hid_parse(hdev);
 	if (ret) {
 		hid_err(hdev, "hid parse failed with %d\n", ret);
-		goto fail_but_destroy;
+		goto fail_mutex_destroy;
 	}
 
 	/*
@@ -405,13 +405,13 @@ static int grid3_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	ret = hid_hw_start(hdev, HID_CONNECT_HIDRAW);
 	if (ret) {
 		hid_err(hdev, "hid hw start failed with %d\n", ret);
-		goto fail_but_stop;
+		goto fail_mutex_destroy;
 	}
 
 	ret = hid_hw_open(hdev);
 	if (ret) {
 		hid_err(hdev, "hid hw open failed with %d\n", ret);
-		goto fail_but_close;
+		goto fail_hid_stop;
 	}
 
 	/*
@@ -421,7 +421,7 @@ static int grid3_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	ret = grid3_driver_init_assume_locked(priv);
 	if (ret) {
 		hid_err(hdev, "driver init failed with %d\n", ret);
-		goto fail_but_close;
+		goto fail_hid_close;
 	}
 
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, hwmon_name,
@@ -430,16 +430,16 @@ static int grid3_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	if (IS_ERR(priv->hwmon_dev)) {
 		ret = PTR_ERR(priv->hwmon_dev);
 		hid_err(hdev, "hwmon registration failed with %d\n", ret);
-		goto fail_but_close;
+		goto fail_hid_close;
 	}
 
 	return 0;
 
-fail_but_close:
+fail_hid_close:
 	hid_hw_close(hdev);
-fail_but_stop:
+fail_hid_stop:
 	hid_hw_stop(hdev);
-fail_but_destroy:
+fail_mutex_destroy:
 	mutex_destroy(&priv->lock);
 	return ret;
 }
