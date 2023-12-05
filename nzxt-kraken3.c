@@ -720,8 +720,7 @@ static const struct hwmon_chip_info kraken3_chip_info = {
 	.info = kraken3_info,
 };
 
-static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report, u8 *data,
-			     int size)
+static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report, u8 *data, int size)
 {
 	struct kraken3_data *priv = hid_get_drvdata(hdev);
 	int i;
@@ -850,7 +849,7 @@ static void kraken3_debugfs_init(struct kraken3_data *priv)
 	char name[64];
 
 	if (!priv->firmware_version[0])
-		return; /* Nothing to display in debugfs */
+		return;		/* Nothing to display in debugfs */
 
 	scnprintf(name, sizeof(name), "%s_%s-%s", DRIVER_NAME, kraken3_device_names[priv->kind],
 		  dev_name(&priv->hdev->dev));
