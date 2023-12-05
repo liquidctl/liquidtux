@@ -289,8 +289,8 @@ unlock_and_return:
 static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
 			long *val)
 {
-	int ret;
 	struct kraken3_data *priv = dev_get_drvdata(dev);
+	int ret;
 
 	if (time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
 		if (priv->kind == X53)
@@ -351,8 +351,8 @@ static int kraken3_read_string(struct device *dev, enum hwmon_sensor_types type,
 /* Writes custom curve to device */
 static int kraken3_write_curve(struct kraken3_data *priv, u8 *curve_array, int channel)
 {
-	int ret;
 	u8 fixed_duty_cmd[SET_CURVE_DUTY_CMD_LENGTH];
+	int ret;
 
 	/* Copy command header */
 	memcpy(fixed_duty_cmd, set_pump_duty_cmd_header, SET_CURVE_DUTY_CMD_HEADER_LENGTH);
@@ -369,8 +369,8 @@ static int kraken3_write_curve(struct kraken3_data *priv, u8 *curve_array, int c
 
 static int kraken3_write_fixed_duty(struct kraken3_data *priv, long val, int channel)
 {
-	int ret, percent_val, i;
 	u8 fixed_curve_points[CUSTOM_CURVE_POINTS];
+	int ret, percent_val, i;
 
 	percent_val = kraken3_pwm_to_percent(val, channel);
 	if (percent_val < 0)
@@ -399,8 +399,8 @@ static int kraken3_write_fixed_duty(struct kraken3_data *priv, long val, int cha
 static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
 			 long val)
 {
-	int ret;
 	struct kraken3_data *priv = dev_get_drvdata(dev);
+	int ret;
 
 	switch (type) {
 	case hwmon_pwm:
@@ -473,10 +473,10 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 static ssize_t kraken3_fan_curve_pwm_store(struct device *dev, struct device_attribute *attr,
 					   const char *buf, size_t count)
 {
-	int ret;
-	long val;
 	struct sensor_device_attribute_2 *dev_attr = to_sensor_dev_attr_2(attr);
 	struct kraken3_data *priv = dev_get_drvdata(dev);
+	long val;
+	int ret;
 
 	if (kstrtol(buf, 10, &val) < 0)
 		return -EINVAL;
@@ -721,8 +721,8 @@ static const struct hwmon_chip_info kraken3_chip_info = {
 static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report, u8 *data,
 			     int size)
 {
-	int i;
 	struct kraken3_data *priv = hid_get_drvdata(hdev);
+	int i;
 
 	if (size < MIN_REPORT_LENGTH)
 		return 0;
@@ -783,8 +783,8 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 
 static int kraken3_init_device(struct hid_device *hdev)
 {
-	int ret;
 	struct kraken3_data *priv = hid_get_drvdata(hdev);
+	int ret;
 
 	/* Set the polling interval */
 	ret = kraken3_write_expanded(priv, set_interval_cmd, SET_INTERVAL_CMD_LENGTH);
@@ -814,8 +814,8 @@ static int __maybe_unused kraken3_reset_resume(struct hid_device *hdev)
 
 static int firmware_version_show(struct seq_file *seqf, void *unused)
 {
-	int ret;
 	struct kraken3_data *priv = seqf->private;
+	int ret;
 
 	ret = kraken3_write_expanded(priv, get_fw_version_cmd, GET_FW_VERSION_CMD_LENGTH);
 	if (ret < 0)
