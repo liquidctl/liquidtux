@@ -97,16 +97,7 @@ struct kraken3_data {
 	struct device *hwmon_dev;
 	struct dentry *debugfs;
 	struct mutex buffer_lock;	/* For locking access to buffer */
-	/* Used to ensure that only one reader requests a Z53 status report */
 	struct mutex z53_status_request_lock;
-	/*
-	 * For retaining returned error code in case of failure with
-	 * multiple readers present during status report refresh.
-	 */
-	int z53_status_request_ret;
-	/* For delaying multiple readers until a Z53 status report is received */
-	wait_queue_head_t z53_reader_wq;
-	bool z53_status_processed;
 	struct completion fw_version_processed;
 	struct completion status_report_processed;
 
@@ -897,7 +888,6 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 
 	mutex_init(&priv->buffer_lock);
 	mutex_init(&priv->z53_status_request_lock);
-	init_waitqueue_head(&priv->z53_reader_wq);
 	init_completion(&priv->fw_version_processed);
 	init_completion(&priv->status_report_processed);
 
