@@ -189,8 +189,7 @@ static int kraken3_write_expanded(struct kraken3_data *priv, const u8 *cmd, int 
 
 	mutex_lock(&priv->buffer_lock);
 
-	memset(priv->buffer, 0x00, MAX_REPORT_LENGTH);
-	memcpy(priv->buffer, cmd, cmd_length);
+	memcpy_and_pad(priv->buffer, MAX_REPORT_LENGTH, cmd, cmd_length, 0x00);
 	ret = hid_hw_output_report(priv->hdev, priv->buffer, MAX_REPORT_LENGTH);
 
 	mutex_unlock(&priv->buffer_lock);
