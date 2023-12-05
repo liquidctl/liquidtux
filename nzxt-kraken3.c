@@ -733,7 +733,10 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 		/* Read firmware version */
 		for (i = 0; i < 3; i++)
 			priv->firmware_version[i] = data[FIRMWARE_VERSION_OFFSET + i];
-		complete(&priv->fw_version_processed);
+
+		if (!completion_done(&priv->fw_version_processed))
+			complete_all(&priv->fw_version_processed);
+
 		return 0;
 	}
 
@@ -801,6 +804,25 @@ static int kraken3_init_device(struct hid_device *hdev)
 	return 0;
 }
 
+static int kraken3_get_fw_ver(struct hid_device *hdev)
+{
+	struct kraken3_data *priv = hid_get_drvdata(hdev);
+	int ret;
+
+	ret = kraken3_write_expanded(priv, get_fw_version_cmd, GET_FW_VERSION_CMD_LENGTH);
+	if (ret < 0)
+		return ret;
+
+	ret = wait_for_completion_interruptible_timeout(&priv->fw_version_processed,
+							msecs_to_jiffies(STATUS_VALIDITY));
+	if (ret == 0)
+		return -ETIMEDOUT;
+	else if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
 static int __maybe_unused kraken3_reset_resume(struct hid_device *hdev)
 {
 	int ret;
@@ -817,18 +839,6 @@ static int __maybe_unused kraken3_reset_resume(struct hid_device *hdev)
 static int firmware_version_show(struct seq_file *seqf, void *unused)
 {
 	struct kraken3_data *priv = seqf->private;
-	int ret;
-
-	ret = kraken3_write_expanded(priv, get_fw_version_cmd, GET_FW_VERSION_CMD_LENGTH);
-	if (ret < 0)
-		return -ENODATA;
-
-	/*
-	 * The response to this request that the device sends is only catchable in
-	 * kraken3_raw_event(), so we have to wait until it's processed there.
-	 */
-	if (wait_for_completion_interruptible(&priv->fw_version_processed))
-		return -ENODATA;
 
 	seq_printf(seqf, "%u.%u.%u\n", priv->firmware_version[0], priv->firmware_version[1],
 		   priv->firmware_version[2]);
@@ -840,6 +850,9 @@ DEFINE_SHOW_ATTRIBUTE(firmware_version);
 static void kraken3_debugfs_init(struct kraken3_data *priv)
 {
 	char name[64];
+
+	if (!priv->firmware_version[0])
+		return; /* Nothing to display in debugfs */
 
 	scnprintf(name, sizeof(name), "%s_%s-%s", DRIVER_NAME, kraken3_device_names[priv->kind],
 		  dev_name(&priv->hdev->dev));
@@ -918,11 +931,16 @@ static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id
 	init_completion(&priv->status_report_processed);
 	spin_lock_init(&priv->status_completion_lock);
 
+	hid_device_io_start(hdev);
 	ret = kraken3_init_device(hdev);
-	if (ret) {
+	if (ret < 0) {
 		hid_err(hdev, "device init failed with %d\n", ret);
 		goto fail_and_close;
 	}
+
+	ret = kraken3_get_fw_ver(hdev);
+	if (ret < 0)
+		hid_warn(hdev, "fw version request failed with %d\n", ret);
 
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev,
 							  kraken3_device_names[priv->kind], priv,
