@@ -51,6 +51,14 @@ Usage Notes
 As these are USB HIDs, the driver can be loaded automatically by the kernel and
 supports hot swapping.
 
+Possible pwm_enable values are:
+
+====== ==========================================================================
+0      Set fan to 100%
+1      Direct PWM mode (applies value in corresponding PWM entry)
+2      Curve control mode (applies the temp-PWM duty curve based on coolant temp)
+====== ==========================================================================
+
 Sysfs entries
 -------------
 
