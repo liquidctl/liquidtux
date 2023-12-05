@@ -834,8 +834,6 @@ static int __maybe_unused kraken3_reset_resume(struct hid_device *hdev)
 	return ret;
 }
 
-#ifdef CONFIG_DEBUG_FS
-
 static int firmware_version_show(struct seq_file *seqf, void *unused)
 {
 	struct kraken3_data *priv = seqf->private;
@@ -860,14 +858,6 @@ static void kraken3_debugfs_init(struct kraken3_data *priv)
 	priv->debugfs = debugfs_create_dir(name, NULL);
 	debugfs_create_file("firmware_version", 0444, priv->debugfs, priv, &firmware_version_fops);
 }
-
-#else
-
-static void kraken3_debugfs_init(struct kraken3_data *priv)
-{
-}
-
-#endif
 
 static int kraken3_probe(struct hid_device *hdev, const struct hid_device_id *id)
 {
