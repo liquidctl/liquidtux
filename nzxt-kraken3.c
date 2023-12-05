@@ -321,7 +321,7 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 			*val = priv->channel_info[channel].reported_duty;
 			break;
 		default:
-			break;
+			return -EOPNOTSUPP;
 		}
 		break;
 	default:
@@ -461,6 +461,8 @@ static int kraken3_write(struct device *dev, enum hwmon_sensor_types type, u32 a
 				break;
 			}
 			break;
+		default:
+			return -EOPNOTSUPP;
 		}
 		break;
 	default:
