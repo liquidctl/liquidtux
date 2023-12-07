@@ -23,7 +23,7 @@ jobs:
           path: src
       - run: echo "::add-matcher::src/.github/workflows/gcc-problem-matcher.json"
       - run: sudo apt-get update
-      - run: sudo apt-get install -y libelf-dev
+      - run: sudo apt-get install -y libelf-dev sparse
       - uses: actions/checkout@v4
         with:
           repository: torvalds/linux
@@ -32,9 +32,9 @@ jobs:
       - run: cp src/.github/workflows/all.config linux/
       - run: scripts/config --file all.config ${{ matrix.kconfig_pm }} ${{ matrix.kconfig_debug_fs }}
         working-directory: linux
-      - run: KCONFIG_ALLCONFIG=1 KCFLAGS=-Werror make allnoconfig
+      - run: KCONFIG_ALLCONFIG=1 KCFLAGS=-Werror make C=1 allnoconfig
         working-directory: linux
-      - run: KCFLAGS=-Werror make -j$(nproc)
+      - run: KCFLAGS=-Werror make C=1 -j$(nproc)
         working-directory: linux
-      - run: KCFLAGS=-Werror make -k "KDIR=${{ github.workspace }}/linux"
+      - run: KCFLAGS=-Werror make C=1 -k "KDIR=${{ github.workspace }}/linux"
         working-directory: src
