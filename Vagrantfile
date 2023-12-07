@@ -23,7 +23,7 @@ USB_IDS = [
 ]
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "fedora/37-cloud-base"
+  config.vm.box = "fedora/39-cloud-base"
 
   config.vm.provider "virtualbox" do |virtualbox, override|
     virtualbox.cpus = CPUS
