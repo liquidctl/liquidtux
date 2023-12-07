@@ -32,9 +32,9 @@ jobs:
       - run: cp src/.github/workflows/all.config linux/
       - run: scripts/config --file all.config ${{ matrix.kconfig_pm }} ${{ matrix.kconfig_debug_fs }}
         working-directory: linux
-      - run: KCONFIG_ALLCONFIG=1 make allnoconfig
+      - run: KCONFIG_ALLCONFIG=1 KCFLAGS=-Werror make allnoconfig
         working-directory: linux
-      - run: make -j$(nproc)
+      - run: KCFLAGS=-Werror make -j$(nproc)
         working-directory: linux
-      - run: make -k "KDIR=${{ github.workspace }}/linux"
+      - run: KCFLAGS=-Werror make -k "KDIR=${{ github.workspace }}/linux"
         working-directory: src
