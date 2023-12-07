@@ -33,7 +33,7 @@ Vagrant.configure("2") do |config|
     virtualbox.customize ["modifyvm", :id, "--usbxhci", "on"]
 
     # HACK: only create usb filters once, if vm doesn't exist yet
-    if not File.exists? File.join(".vagrant", "machines", "default", "virtualbox", "id")
+    if not File.exist? File.join(".vagrant", "machines", "default", "virtualbox", "id")
       USB_IDS.each_with_index do |usb_id, index|
         virtualbox.customize ["usbfilter", "add", index.to_s, "--target", :id, "--name", "dev-#{usb_id[:vendor]}-#{usb_id[:product]}", "--vendorid", usb_id[:vendor], "--productid", usb_id[:product]]
       end
