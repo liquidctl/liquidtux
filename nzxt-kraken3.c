@@ -298,11 +298,11 @@ static int kraken3_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 		else
 			ret = kraken3_read_z53(priv);
 
-		if (priv->is_device_faulty)
-			return -ENODATA;
-
 		if (ret < 0)
 			return ret;
+
+		if (priv->is_device_faulty)
+			return -ENODATA;
 	}
 
 	switch (type) {
