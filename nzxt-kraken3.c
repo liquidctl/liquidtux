@@ -750,10 +750,12 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 		 * Mark first X-series device report as received,
 		 * as well as all for Z-series, if faulty.
 		 */
+		spin_lock(&priv->status_completion_lock);
 		if (priv->kind != X53 || !completion_done(&priv->status_report_processed)) {
 			priv->is_device_faulty = true;
 			complete_all(&priv->status_report_processed);
 		}
+		spin_unlock(&priv->status_completion_lock);
 
 		return 0;
 	}
@@ -768,18 +770,20 @@ static int kraken3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	priv->fan_input[0] = get_unaligned_le16(data + PUMP_SPEED_OFFSET);
 	priv->channel_info[0].reported_duty = kraken3_percent_to_pwm(data[PUMP_DUTY_OFFSET]);
 
-	/* Mark first X-series device report as received */
-	if (priv->kind == X53 && !completion_done(&priv->status_report_processed))
+	spin_lock(&priv->status_completion_lock);
+	if (priv->kind == X53 && !completion_done(&priv->status_report_processed)) {
+		/* Mark first X-series device report as received */
 		complete_all(&priv->status_report_processed);
-
-	/* Additional readings for Z53 */
-	if (priv->kind == Z53) {
+	} else if (priv->kind == Z53) {
+		/* Additional readings for Z53 */
 		priv->fan_input[1] = get_unaligned_le16(data + Z53_FAN_SPEED_OFFSET);
 		priv->channel_info[1].reported_duty =
 		    kraken3_percent_to_pwm(data[Z53_FAN_DUTY_OFFSET]);
 
-		complete_all(&priv->status_report_processed);
+		if (!completion_done(&priv->status_report_processed))
+			complete_all(&priv->status_report_processed);
 	}
+	spin_unlock(&priv->status_completion_lock);
 
 	priv->updated = jiffies;
 
