@@ -27,7 +27,7 @@ This is the current state of the drivers in regards to this process:
 | NZXT Smart Device V2/RGB & Fan Controller | `nzxt-smart2` | `nzxtsmart2` | in Linux 5.17 ([patch][p-smart2]) |
 
 This repository contains the latest state of each driver, including features
-and bug fixes been worked on but no yet submitted upstream.
+and bug fixes that are not yet submitted upstream.
 
 _Note: other hwmon drivers exist in the mainline kernel for devices that
 liquidctl also supports: [`corsair-cpro`], [`corsair-psu`]._
