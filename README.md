@@ -70,10 +70,10 @@ built modules can then be loaded with `insmod`.
 
 ```
 $ make
-$ sudo insmod nzxt-grid3.ko             # NZXT Grid+ V3/Smart Device (V1)
-$ sudo insmod nzxt-kraken2.ko           # NZXT Kraken X42/X52/X62/X72
-$ sudo insmod nzxt-kraken3              # NZXT Kraken X53/X63/X73, Z53/Z63/Z73, Kraken 2023 (standard, Elite)
-$ sudo insmod nzxt-smart2               # NZXT Smart Device V2/RGB & Fan Controller
+$ sudo insmod drivers/hwmon/nzxt-grid3.ko         # NZXT Grid+ V3/Smart Device (V1)
+$ sudo insmod drivers/hwmon/nzxt-kraken2.ko       # NZXT Kraken X42/X52/X62/X72
+$ sudo insmod drivers/hwmon/nzxt-kraken3.ko       # NZXT Kraken X53/X63/X73, Z53/Z63/Z73, Kraken 2023 (standard, Elite)
+$ sudo insmod drivers/hwmon/nzxt-smart2.ko        # NZXT Smart Device V2/RGB & Fan Controller
 ```
 
 To unload them, use `rmmod` or `modprobe -r`.
