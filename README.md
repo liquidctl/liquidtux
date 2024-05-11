@@ -23,7 +23,7 @@ This is the current state of the drivers in regards to this process:
 | --- | --- | --- | --- |
 | NZXT Grid+ V3/Smart Device (V1) | `nzxt-grid3` | `smartdevice` | getting ready to submit | |
 | NZXT Kraken X42/X52/X62/X72 | `nzxt-kraken2` | `kraken2` | in Linux 5.13 ([patch][p-kraken2-v2]) |
-| NZXT Kraken X53/X63/X73, Z53/Z63/Z73, Kraken 2023 (standard, Elite) | `nzxt-kraken3` | `kraken3` | in Linux 6.9 ([patch][p-kraken3]), Kraken 2023 - getting ready to submit |
+| NZXT Kraken X53/X63/X73, Z53/Z63/Z73, Kraken 2023 (standard, Elite) | `nzxt-kraken3` | `kraken3` | in Linux 6.9 ([patch][p-kraken3]), Kraken 2023 - in Linux 6.10 ([patch][p-kraken2023]) |
 | NZXT Smart Device V2/RGB & Fan Controller | `nzxt-smart2` | `nzxtsmart2` | in Linux 5.17 ([patch][p-smart2]) |
 
 This repository contains the latest state of each driver, including features
@@ -95,4 +95,5 @@ $ sudo make modules_install
 [lm-sensors]: https://github.com/lm-sensors/lm-sensors
 [p-kraken2-v2]: https://patchwork.kernel.org/project/linux-hwmon/patch/20210319045544.416138-1-jonas@protocubo.io/
 [p-kraken3]: https://patchwork.kernel.org/project/linux-hwmon/patch/20240129111932.368232-1-savicaleksa83@gmail.com/
+[p-kraken2023]: https://patchwork.kernel.org/project/linux-hwmon/patch/20240428104812.14037-3-savicaleksa83@gmail.com/
 [p-smart2]: https://patchwork.kernel.org/project/linux-hwmon/patch/20211031033058.151014-1-mezin.alexander@gmail.com/
