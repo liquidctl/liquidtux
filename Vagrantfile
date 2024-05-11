@@ -20,6 +20,8 @@ USB_IDS = [
   { :vendor => "0x1e71", :product => "0x200e" },
   { :vendor => "0x1e71", :product => "0x200f" },
   { :vendor => "0x1e71", :product => "0x2010" },
+  { :vendor => "0x1e71", :product => "0x2011" },
+  { :vendor => "0x1e71", :product => "0x2019" },
 ]
 
 Vagrant.configure("2") do |config|
