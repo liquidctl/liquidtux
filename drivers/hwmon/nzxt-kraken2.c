@@ -9,7 +9,12 @@
  * Copyright 2019-2021  Jonas Malaco <jonas@protocubo.io>
  */
 
+#if KERNEL_VERSION(6, 12, 0) > LINUX_VERSION_CODE
+#include <linux/unaligned.h>
+#else
 #include <asm/unaligned.h>
+#endif
+
 #include <linux/hid.h>
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
