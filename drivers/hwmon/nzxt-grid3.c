@@ -33,10 +33,13 @@
  * Copyright 2019-2021  Jonas Malaco <jonas@protocubo.io>
  */
 
-#if KERNEL_VERSION(6, 12, 0) > LINUX_VERSION_CODE
-#include <linux/unaligned.h>
-#else
+#include <generated/uapi/linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
+// kernel before 6.12:
 #include <asm/unaligned.h>
+#else
+// kernel 6.12 onwards:
+#include <linux/unaligned.h>
 #endif
 
 #include <linux/bitops.h>

@@ -5,7 +5,7 @@
  * Copyright (c) 2021 Aleksandr Mezin
  */
 
-#include <linux/version.h>
+#include <generated/uapi/linux/version.h>
 
 #include <linux/hid.h>
 #include <linux/hwmon.h>
@@ -20,11 +20,12 @@
 #include <linux/wait.h>
 
 #include <asm/byteorder.h>
-
-#if KERNEL_VERSION(6, 12, 0) > LINUX_VERSION_CODE
-#include <linux/unaligned.h>
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
+// kernel before 6.12:
 #include <asm/unaligned.h>
+#else
+// kernel 6.12 onwards:
+#include <linux/unaligned.h>
 #endif
 
 /*
