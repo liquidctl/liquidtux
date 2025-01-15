@@ -20,11 +20,9 @@
 #include <linux/spinlock.h>
 #include <linux/wait.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
-// kernel before 6.12:
+#if KERNEL_VERSION(6, 12, 0) >= LINUX_VERSION_CODE
 #include <asm/unaligned.h>
 #else
-// kernel 6.12 onwards:
 #include <linux/unaligned.h>
 #endif
 
