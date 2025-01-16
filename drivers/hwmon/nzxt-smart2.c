@@ -9,10 +9,10 @@
 
 #include <linux/hid.h>
 #include <linux/hwmon.h>
-#if KERNEL_VERSION(5, 11, 0) > LINUX_VERSION_CODE
-#include <linux/kernel.h>
-#else
+#if KERNEL_VERSION(5, 11, 0) <= LINUX_VERSION_CODE
 #include <linux/math.h>
+#else
+#include <linux/kernel.h>
 #endif
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -21,10 +21,10 @@
 
 #include <asm/byteorder.h>
 
-#if KERNEL_VERSION(6, 12, 0) >= LINUX_VERSION_CODE
-#include <asm/unaligned.h>
-#else
+#if KERNEL_VERSION(6, 12, 0) <= LINUX_VERSION_CODE
 #include <linux/unaligned.h>
+#else
+#include <asm/unaligned.h>
 #endif
 
 /*

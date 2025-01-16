@@ -11,10 +11,10 @@
 
 #include <generated/uapi/linux/version.h>
 
-#if KERNEL_VERSION(6, 12, 0) >= LINUX_VERSION_CODE
-#include <asm/unaligned.h>
-#else
+#if KERNEL_VERSION(6, 12, 0) <= LINUX_VERSION_CODE
 #include <linux/unaligned.h>
+#else
+#include <asm/unaligned.h>
 #endif
 
 #include <linux/hid.h>
