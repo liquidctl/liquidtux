@@ -5,14 +5,14 @@
  * Copyright (c) 2021 Aleksandr Mezin
  */
 
-#include <linux/version.h>
+#include <generated/uapi/linux/version.h>
 
 #include <linux/hid.h>
 #include <linux/hwmon.h>
-#if KERNEL_VERSION(5, 11, 0) > LINUX_VERSION_CODE
-#include <linux/kernel.h>
-#else
+#if KERNEL_VERSION(5, 11, 0) <= LINUX_VERSION_CODE
 #include <linux/math.h>
+#else
+#include <linux/kernel.h>
 #endif
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -20,7 +20,12 @@
 #include <linux/wait.h>
 
 #include <asm/byteorder.h>
+
+#if KERNEL_VERSION(6, 12, 0) <= LINUX_VERSION_CODE
+#include <linux/unaligned.h>
+#else
 #include <asm/unaligned.h>
+#endif
 
 /*
  * The device has only 3 fan channels/connectors. But all HID reports have
