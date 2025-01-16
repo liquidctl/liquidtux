@@ -9,7 +9,7 @@ jobs:
       matrix:
         kernel_version:
           - master
-          - v6.2
+          - v6.8
         kconfig_pm:
           - "-e CONFIG_PM"
           - "-d CONFIG_PM"
