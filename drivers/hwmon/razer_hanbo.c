@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * hwmon driver for Razer Hanbo AIO CPU coolers.
+ * hwmon driver for Razer Hanbo Chroma AIO CPU coolers.
  *
  * Copyright 2025 Joseph East <eastyjr@gmail.com>
  */
@@ -16,7 +16,7 @@
 
 #define DRIVER_NAME			"razer_hanbo"
 
-/* Device constraints from firmware */
+/* Device parameters */
 #define USB_VENDOR_ID_RAZER		0x1532
 #define USB_PRODUCT_ID_HANBO		0x0f35
 
@@ -224,8 +224,10 @@ static int hanbo_hid_profile_send(struct hanbo_data *priv, int channel,
 		 * the higher up the curve they are.
 		 */
 		for (i = SET_CURVE_CMD_LENGTH - 1; i > SET_CURVE_CMD_HEADER - 1; i--) {
-			set_profile_cmd[i] = priv->channel_info[channel].pwm_points[i - SET_CURVE_CMD_HEADER];
-			if (i != SET_CURVE_CMD_LENGTH - 1 && set_profile_cmd[i + 1] < set_profile_cmd[i])
+			set_profile_cmd[i] =
+				priv->channel_info[channel].pwm_points[i - SET_CURVE_CMD_HEADER];
+			if (i != SET_CURVE_CMD_LENGTH - 1 &&
+			    set_profile_cmd[i + 1] < set_profile_cmd[i])
 				ret = -EINVAL;
 		}
 		if (ret < 0)
@@ -322,11 +324,11 @@ static int hanbo_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 			*val = priv->channel_info[channel].active_profile;
 			break;
 		default:
-			return -EOPNOTSUPP;
+			return -EOPNOTSUPP; /* sysfs unreachable */
 		}
 		break;
 	default:
-		return -EOPNOTSUPP; /* unreachable */
+		return -EOPNOTSUPP; /* sysfs unreachable */
 	}
 	return 0;
 }
@@ -343,7 +345,7 @@ static int hanbo_hwmon_read_string(struct device *dev,
 		*str = hanbo_speed_label[channel];
 		break;
 	default:
-		return -EOPNOTSUPP; /* unreachable */
+		return -EOPNOTSUPP; /* sysfs unreachable */
 	}
 	return 0;
 }
@@ -381,15 +383,17 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 			}
 			u8 set_cpu_temp_cmd[SET_CPU_TEMP_CMD_LENGTH];
 
-			memcpy(set_cpu_temp_cmd, set_vcpu_temp_cmd_template, SET_CPU_TEMP_CMD_LENGTH);
+			memcpy(set_cpu_temp_cmd, set_vcpu_temp_cmd_template,
+			       SET_CPU_TEMP_CMD_LENGTH);
 			set_cpu_temp_cmd[SET_CPU_TEMP_CMD_OFFSET] = sane_val & 0xFF;
-			ret = hanbo_hid_write_expanded(priv, set_cpu_temp_cmd, SET_CPU_TEMP_CMD_LENGTH);
+			ret = hanbo_hid_write_expanded(priv, set_cpu_temp_cmd,
+						       SET_CPU_TEMP_CMD_LENGTH);
 			priv->temp_input[1] = sane_val * 1000;
 			if (ret < 0)
 				goto unlock_and_return;
 			break;
 
-		default: /* unreachable */
+		default: /* sysfs unreachable */
 			ret = -EOPNOTSUPP;
 			goto unlock_and_return;
 		}
@@ -407,22 +411,26 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 			case FAN_CHANNEL:
 				switch (val) {
 				case 1:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF, 0x14);
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
+								     0x14);
 					if (ret < 0)
 						goto unlock_and_return;
 					break;
 				case 2:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF, 0x32);
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
+								     0x32);
 					if (ret < 0)
 						goto unlock_and_return;
 					break;
 				case 3:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF, 0x50);
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
+								     0x50);
 					if (ret < 0)
 						goto unlock_and_return;
 					break;
 				case 4:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF, 0x00);
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
+								     0x00);
 					if (ret < 0)
 						goto unlock_and_return;
 					break;
@@ -434,22 +442,26 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 			case PUMP_CHANNEL:
 				switch (val) {
 				case 1:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF, 0x14);
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
+								     0x14);
 					if (ret < 0)
 						goto unlock_and_return;
 					break;
 				case 2:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF, 0x32);
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
+								     0x32);
 					if (ret < 0)
 						goto unlock_and_return;
 					break;
 				case 3:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF, 0x50);
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
+								     0x50);
 					if (ret < 0)
 						goto unlock_and_return;
 					break;
 				case 4:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF, 0x00);
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
+								     0x00);
 					if (ret < 0)
 						goto unlock_and_return;
 					break;
@@ -458,17 +470,17 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 					goto unlock_and_return;
 				}
 				break;
-			default: /* unreachable */
+			default: /* sysfs unreachable */
 				ret = -EINVAL;
 				goto unlock_and_return;
 			}
 			break;
-		default: /* unreachable */
+		default: /* sysfs unreachable */
 			ret = -EOPNOTSUPP;
 			goto unlock_and_return;
 		}
 		break;
-	default: /* unreachable */
+	default: /* sysfs unreachable */
 		ret = -EOPNOTSUPP;
 		goto unlock_and_return;
 	}
@@ -693,7 +705,8 @@ static int hanbo_raw_event(struct hid_device *hdev, struct hid_report *report,
 		}
 		break;
 	case FAN_STATUS_REPORT_ID:
-		if (hanbo_hid_validate_header(LONG_ACK, (u8 []){code, 0x02, 0x02, 0x01}, data, 10)) {
+		if (hanbo_hid_validate_header(LONG_ACK,
+					      (u8 []){code, 0x02, 0x02, 0x01}, data, 10)) {
 			priv->channel_info[FAN_CHANNEL].tacho = get_unaligned_be16(data + 6);
 			priv->channel_info[FAN_CHANNEL].attained_pwm = data[9];
 			priv->channel_info[FAN_CHANNEL].commanded_pwm = data[8];
@@ -770,7 +783,8 @@ static int hanbo_drv_init(struct hid_device *hdev)
 
 	ret = hanbo_hwmon_write(&hdev->dev, mytype, myattr, FAN_CHANNEL, 30000);
 	memcpy(priv->channel_info[FAN_CHANNEL].pwm_points, default_fan_curve, CUSTOM_CURVE_POINTS);
-	memcpy(priv->channel_info[PUMP_CHANNEL].pwm_points, default_pump_curve, CUSTOM_CURVE_POINTS);
+	memcpy(priv->channel_info[PUMP_CHANNEL].pwm_points, default_pump_curve,
+	       CUSTOM_CURVE_POINTS);
 	return ret;
 }
 
@@ -827,9 +841,9 @@ static int hanbo_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	init_completion(&priv->fw_version_processed);
 	hid_device_io_start(hdev);
 	/*
-	 * The Razer Hanbo does not have a mandatory startup sequence. However
-	 * there are things that can be done during bring up to make state
-	 * tracking easier throughout the driver lifecycle.
+	 * The Razer Hanbo Chroma does not have a mandatory startup sequence.
+	 * However there are things that can be done during bring up to make
+	 * state tracking easier throughout the driver lifecycle.
 	 * These are done in this init function.
 	 */
 	ret = hanbo_drv_init(hdev);
@@ -890,4 +904,4 @@ module_exit(hanbo_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Joseph East <eastyjr@gmail.com>");
-MODULE_DESCRIPTION("Hwmon driver for the Razer Hanbo cooler");
+MODULE_DESCRIPTION("Hwmon driver for the Razer Hanbo Chroma cooler");

@@ -5,135 +5,157 @@ Kernel driver razer_hanbo
 
 Supported devices:
 
-* Razer Hanbo 360mm
+* Razer Hanbo Chroma 360mm
 
 Author: Joseph East
 
 Description
 -----------
 
-This driver enables hardware monitoring support for the Razer Hanbo all-in-one
-CPU liquid coolers. Available sensors are pump and fan speeds in RPM, their
-PWM duty cycles as percentages, coolant temperature and other state trackers.
-Also available through debugfs is the firmware version. This has been
-validated against OEM firmware 1.2.0, it is unknown whether this driver is
-compatible with other versions.
+This driver enables hardware monitoring support for the Razer Hanbo Chroma
+all-in-one CPU liquid coolers. Available sensors are pump and fan speeds in RPM,
+their PWM duty cycles as percentages, coolant temperature and other state
+trackers. Also available through debugfs is the firmware version. This driver
+has been developed against OEM firmware 1.2.0.
 
 Like the OEM software the pump and fans are unable to be directly controlled.
 Instead there are four profile modes which are selectable via sysfs to change
-device behaviour explained later. The pump and fans can run on different
+device behaviour explained further on. The pump and fans can run on different
 profiles. It is not possible to control individual fans in terms of thermals,
 they are treated as the one entity.
 
 Attaching fans is optional and allows them to be controlled from the device,
-freeing motherboard resources. If they are not connected, the fan-related
-sensors will report zeroes, this driver will not report an error.
+freeing motherboard resources. If they are not connected the fan-related
+sensors will report zeroes, this driver though will not report an error.
 
 The addressable RGB LEDs are not supported in this driver and should be
 controlled through userspace tools instead.
 
-Usage notes
+Usage Notes
 -----------
+
+The driver exposes two hwmon channels. Channel 1 refers to pump functions
+with Channel 2 referring to the fan.
 
 As these are USB HIDs, the driver can be loaded automatically by the kernel
 and supports hot swapping.
 
-The Razer Hanbo has the following behaviours during startup:
+The Razer Hanbo Chroma has the following startup behaviours:
+
 * Device goes to 100% if the USB interface fails i.e. not connected.
   This is the power-on and fault state.
 * The previous active profile including curves is restored from hardware
   when the USB interface is enumerated, driver present or not. This is the
-  running state.
+  running state and it cannot be fully queried.
 * Lighting is a free-running ARGB spectrum cycling sequence regardless.
   There are no other internal effect modes.
 
 Performance Profiles
+^^^^^^^^^^^^^^^^^^^^
+
 The fan and pump can run independent performance profiles which are equivalent
-to the OEM software. Referring to the sysfs entries table below:
-1 = Quiet, 20% duty
-2 = Normal, 50% duty
-3 = Performance, 80% duty
-4 = Curve mode
+to the OEM software.
 
-Be aware that all the fan profiles rely on an external CPU temperature to
-function. See curve mode notes below.
+=====  =====================
+ID     Profile
+=====  =====================
+1      Quiet (20% duty cycle)
+2      Normal (50% duty cycle)
+3      Performance (80% duty cycle)
+4      Custom Curve Mode
+=====  =====================
 
-The profiles can be changed by providing the profile number to the pwmX_enable
-node. e.g. echo 3 > /sys/class/<...>/hwmonZ/pwm1_enable sets the pump to
-performance mode.
+Switching a profile is achieved by writing an ID to a ``pwmX_enable`` sysfs
+node. e.g. to enable performance mode on the pump issue:
 
-Profile 4 Curve Mode:
-9 curve points correspond to +20 degrees C through +100 degrees C in 10 degree
-steps where 'point 1' represents 20 degrees C. Each point is associated with a
-1-byte PWM duty cycle from 20-100% (x14-x64) to drive the cooler whilst within
-that temperature range. The AIO interpolates between points automatically.
-Each point is written to individually using the tempX_auto_pointY_pwm nodes in
-sysfs. When writing to these nodes, the driver will accept values between
-20-100 inclusive (x14-x64) and clamp invalid values to the relevant extreme.
+``echo 3 > /sys/class/<...>/hwmonZ/pwm1_enable``
 
-e.g. echo 30 > /sys/class/<...>/hwmonZ/temp2_auto_point2_pwm to set fan curve
-point 2 (30 degrees) to 30% PWM.
+Be aware that *all* *fan* profiles rely on external reference temperature to
+function. See AIO Reference Temperature below.
 
-Progressive fan curve PWM values must be equal to or higher than the previous
-point throughout the curve. This is the responsibility of the user.
-An invalid curve is reported upon attempting to switch to profile 4 via a
-write error: Invalid argument error. Upon switching to profile 4 for either
-the fan or pump, the respective curve is sanity checked and uploaded to the
-AIO. If changes are made to the curve via sysfs post-switch you will need to
-enable profile 4 again to upload the new curve.
+Custom Curve Mode (Profile 4)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-How do profiles know what the temperature is?
+Each channel has nine curve points which correspond to +20 degrees C through
++100 degrees C in 10 degree steps. Sysfs node ``tempX_auto_point1_pwm``
+represents 20 degrees C. It is not possible to change the temperature value of
+the points, only the duty cycles associated with them. To that end, each point
+is associated with a 1-byte PWM duty cycle ranging from 20-100% (x14-x64) which
+the AIO will select as the reference temperature traverses the curve. The AIO
+interpolates between points automatically. Each point is written to individually
+using the ``tempX_auto_pointY_pwm`` nodes in sysfs. e.g. to set fan curve point
+2 (30 degrees) to 40% PWM:
 
-For the pump, operation is autonomous as the reference temperature is
-the internal liquid temperature in the AIO. This matches the value of the
-temperature at temp1_input in sysfs, no hand-holding needed.
+``echo 40 > /sys/class/<...>/hwmonZ/temp2_auto_point2_pwm``
 
-For the fans, curves will be traversed based on CPU temperature feedback which
-is provided via the temp2_input sysfs node. Temperature updates can occur at
-any time. It can take between 3-10 seconds for a CPU temperature update
-to be reflected in curve behaviour. As there are no timeouts, CPU temperature
-updates do not go stale. The last written value will continue to be used as
-the reference until it changes. This includes changing profiles. It is
-unknown if this survives power cycles as the driver overrides the value
-every time it is loaded. Like other sysfs nodes in this driver, the
-temp2_input node has valid vaules between 0-100 with values outside this
-range internally clamped. Negative numbers are treated as 0 for this node.
+When writing to these nodes, the driver will accept values between 20-100
+inclusive (x14-x64) and clamp invalid values to the relevant extreme. Curve PWM
+values must be equal to or greater than the previous point as the curve
+progresses. Switching to profile 4, fan or pump, sanity checks the associated
+curve before uploading to the AIO. An invalid curve is reported upon attempting
+to switch to profile 4 via ``write error: Invalid argument``, in which case no
+changes are made to the AIO. Should profile 4 be active and a curve point is
+altered via sysfs you will need to set profile 4 again on that channel to upload
+the new curve.
 
-The hwmon interface dictates that temperatures are to be transacted in
-in millidegrees C. The Razer Hanbo resolves CPU temperatures in 1 degree
-steps. The driver will accept a millidegree input and round as appropriate
-before sending to the AIO. Liquid temperature is natively reported as
-decidegrees from the AIO.
+AIO Reference Temperature
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-As part of driver initialisation, a one-shot CPU temperature of 30 degrees C
-is written along with a basic fan and pump curves. This is to prevent
-activation of profile 4 with unknown curve parameters. It is assumed
-that userspace tools will be used to manage fan operation.
-It is not possible to change the temperature values of the curves, only the
-duty cycles associated with them.
+The fan curve is traversed using a CPU reference temperature which is provided
+at the ``temp2_input`` sysfs node. Temperature updates can be issued from there
+at any time. It can take between 3-10 seconds for a CPU temperature update to be
+reflected in hardware behaviour but protocol wise this is non-blocking. As there
+are no timeouts, CPU temperature updates do not go stale. The last written value
+will continue to be used as the reference until it changes. This survives
+profile changes. The hwmon interface dictates that temperatures are to be
+formatted in millidegrees C. The Razer Hanbo Chroma resolves CPU reference
+temperature in 1 degree steps. The driver will accept a millidegree input, then
+round or clamp as appropriate before sending to the AIO. The Razer Hanbo Chroma
+has a valid temperature range of 0-100 degrees C, any negative numbers are
+treated as 0.
 
-Driver default curves-
+For the pump, curve traversal is autonomous as the reference temperature is
+the internal coolant temperature in the AIO. This matches the value of the
+temperature at ``temp1_input`` in sysfs. The coolant temperature is natively
+reported as decidegrees from the AIO and converted to millidegrees when reading.
 
-Temp:    20C   30C   40C   50C   60C   70C   80C   90C  100C
-Fan:  { 0x18, 0x1e, 0x28, 0x30, 0x3c, 0x51, 0x64, 0x64, 0x64 };
-Pump: { 0x14, 0x28, 0x3c, 0x50, 0x64, 0x64, 0x64, 0x64, 0x64 };
+Driver Lifecycle
+^^^^^^^^^^^^^^^^
 
-A feature of profile 4 is that it cannot be queried nor is it broadcast.
-If the driver initiated curve mode, it will make profile 4 'sticky' when
-reading pwmX_enable until the driver is commanded to change to another
-profile. In the event that the driver is reloaded, knowledge of curve mode is
-lost and sysfs will reflect the HID status reports which only show profiles
-1-3. You cannot rely on the AIO to reliably give you its complete state. This
-is only achieved if a profile change occurred during the connection lifecycle
-as the driver would be aware of what it told the AIO. The driver state is
-retained during sleep and resume but will be lost on shutdown. If one intends
-to use profile 4 as their default it should be manually reloaded every time
-the driver is started for accurate state tracking. It is not possible to
-download curves from the AIO.
+The Razer Hanbo Chroma does not provide sufficient reporting to reconstruct its
+complete internal state should the driver or other user of it happen to reset.
+One side effect of this is that it is impossible to determine if profile 4
+specifically is actually running on the AIO; the driver had to have been active
+at the time when the command was sent and be the origin of that command. This is
+not the case for other profiles. If the driver initiated curve mode, it will
+make profile 4 'sticky' when reading ``pwmX_enable`` until the driver is
+commanded to change profile.
 
-Similarly, the CPU reference temperature at temp2_input when read only
-reflects what the driver previously sent to the AIO in this session, not what
-is actually in firmware.
+Similarly, the CPU reference temperature at ``temp2_input`` only reflects what
+the driver previously sent to the AIO in this session when read, not what the
+AIO is actually acting on in hardware.
+
+It is for this reason that as part of driver initialization, CPU reference
+temperature is set to 30 degrees C and the internal data structures are
+initialized with basic fan and pump curves. This is to prevent activation of
+profile 4 with unknown curve parameters. The driver does not set any profile
+upon being loaded.
+
+The driver state is retained during sleep and resume but will be lost on
+shutdown. If one intends to use profile 4 as their default it should be
+manually reloaded every time the driver is started for accurate state tracking.
+It is assumed that userspace tools will be used for this purpose. It is
+not possible to download curves from the AIO.
+
+**Driver default curves**
+
++------+------+------+------+------+------+------+------+------+------+
+| Temp |  20C | 30C  | 40C  | 50C  | 60C  | 70C  | 80C  | 90C  | 100C |
++======+======+======+======+======+======+======+======+======+======+
+| Fan  | 0x18 | 0x1e | 0x28 | 0x30 | 0x3c | 0x51 | 0x64 | 0x64 | 0x64 |
++------+------+------+------+------+------+------+------+------+------+
+| Pump | 0x14 | 0x28 | 0x3c | 0x50 | 0x64 | 0x64 | 0x64 | 0x64 | 0x64 |
++------+------+------+------+------+------+------+------+------+------+
 
 Sysfs entries
 -------------
