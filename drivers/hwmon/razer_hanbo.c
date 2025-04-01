@@ -51,21 +51,27 @@ static const u8 set_pump_fan_curve_cmd_template[] = {
 	0x18, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 static const u8 default_fan_curve[] = { 0x18, 0x1e, 0x28, 0x30, 0x3c, 0x51, 0x64, 0x64, 0x64 };
 static const u8 default_pump_curve[] = { 0x14, 0x28, 0x3c, 0x50, 0x64, 0x64, 0x64, 0x64, 0x64 };
+static const u8 profile_base_duties[] = { 0x00, 0x14, 0x32, 0x50 };
+static const u8 ack_header_type_a[] = { 0x00, 0x02, 0x01, 0x00 };
+static const u8 ack_header_type_b[] = { 0x00, 0x02, 0x02, 0x01 };
 
 /* Firmware command lengths and offsets */
 #define GET_STATUS_CMD_LENGTH		2
 #define GET_FIRMWARE_VER_CMD_LENGTH	2
 #define SET_PROFILE_CMD_LENGTH		4
 #define SET_CURVE_CMD_LENGTH		13
-#define SET_CURVE_CMD_HEADER		4
 #define SET_CPU_TEMP_CMD_LENGTH		6
+#define FIRMWARE_VERSION_LENGTH		8
+#define SERIAL_NUMBER_LENGTH		15
 #define SET_PROFILE_ID_OFFSET		2
 #define SET_PROFILE_PWM_OFFSET		3
-#define SET_CPU_TEMP_CMD_OFFSET		2
+#define SET_CPU_TEMP_PAYLOAD_OFFSET	2
 #define FIRMWARE_VERSION_OFFSET		26
-#define SHORT_ACK			2
-#define REG_ACK				3
-#define LONG_ACK			4
+#define SERIAL_NUMBER_OFFSET		3
+#define CURVE_PAYLOAD_OFFSET		4
+#define SHORT_ACK_LENGTH		2
+#define REG_ACK_LENGTH			3
+#define LONG_ACK_LENGTH			4
 
 /* Convenience labels specific to this driver */
 #define PUMP_CHANNEL			0
@@ -74,7 +80,7 @@ static const u8 default_pump_curve[] = { 0x14, 0x28, 0x3c, 0x50, 0x64, 0x64, 0x6
 
 static const char *const hanbo_temp_label[] = {
 	"Coolant temp",
-	"Fan curve CPU temp"
+	"Reference temp"
 };
 
 static const char *const hanbo_speed_label[] = {
@@ -110,24 +116,37 @@ struct hanbo_data {
 	/* Staging buffer for sending HID packets */
 	u8 *buffer;
 	u8 firmware_version[8];
+	char serial_number[15];
 	unsigned long updated;	/* jiffies */
 };
 
 /* Validates the internal layout of a report, not the contents */
-static int hanbo_hid_validate_header(int header_size, const u8 *header,
-				     const u8 *data, int eop_offset)
+static int hanbo_hid_validate_header(int header_size, const u8 *data,
+				     int eop_offset)
 {
 	int i;
+	u8 header[LONG_ACK_LENGTH];
 
-	for (i = 0; i < header_size; i++) {
+	switch (header_size) {
+	case SHORT_ACK_LENGTH:
+	case REG_ACK_LENGTH:
+		memcpy(header, ack_header_type_a, REG_ACK_LENGTH);
+		break;
+	case LONG_ACK_LENGTH:
+		memcpy(header, ack_header_type_b, LONG_ACK_LENGTH);
+		break;
+	default:
+		return -EPROTO;
+	}
+	for (i = 1; i < header_size; i++) {
 		if (header[i] != data[i])
-			return 0;
+			return -EPROTO;
 	}
 	for (i = eop_offset; i < MAX_REPORT_LENGTH; i++) {
 		if (data[i] != 0)
-			return 0;
+			return -EPROTO;
 	}
-	return 1;
+	return 0;
 }
 
 /* Write a command to the device with zero padding the report size */
@@ -150,11 +169,9 @@ static int hanbo_hid_get_status(struct hanbo_data *priv)
 
 	if (ret < 0)
 		return ret;
-
 	/* Data is up to date */
 	if (!time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY_MS)))
 		goto unlock_and_return;
-
 	/*
 	 * Disable raw event parsing for a moment to safely reinitialize the
 	 * completion. Reinit is done because hidraw could have triggered
@@ -169,12 +186,10 @@ static int hanbo_hid_get_status(struct hanbo_data *priv)
 	ret = hanbo_hid_write_expanded(priv, get_fan_status_cmd, GET_STATUS_CMD_LENGTH);
 	if (ret < 0)
 		goto unlock_and_return;
-
 	ret = wait_for_completion_interruptible_timeout(&priv->status_report_received,
 							msecs_to_jiffies(STATUS_VALIDITY_MS));
 	if (ret == 0)
 		ret = -ETIMEDOUT;
-
 	/* Then pump */
 	spin_lock_bh(&priv->status_report_request_lock);
 	reinit_completion(&priv->status_report_received);
@@ -183,32 +198,27 @@ static int hanbo_hid_get_status(struct hanbo_data *priv)
 	ret = hanbo_hid_write_expanded(priv, get_pump_status_cmd, GET_STATUS_CMD_LENGTH);
 	if (ret < 0)
 		goto unlock_and_return;
-
 	ret = wait_for_completion_interruptible_timeout(&priv->status_report_received,
 							msecs_to_jiffies(STATUS_VALIDITY_MS));
 	if (ret == 0)
 		ret = -ETIMEDOUT;
-
 unlock_and_return:
-	mutex_unlock(&priv->status_report_request_mutex);
+	/* If we've failed to send for whatever reason, cancel the completion */
 	if (ret < 0) {
-		/* If we've failed to send for whatever reason, cancel the completion */
 		spin_lock(&priv->status_report_request_lock);
 		if (!completion_done(&priv->status_report_received))
 			complete_all(&priv->status_report_received);
-
 		spin_unlock(&priv->status_report_request_lock);
-		return ret;
 	}
-	return 0;
+	mutex_unlock(&priv->status_report_request_mutex);
+	return ret;
 }
 
 /* Convenience function to declutter hanbo_hwmon_write() */
 static int hanbo_hid_profile_send(struct hanbo_data *priv, int channel,
-				  u8 profile, u8 duty)
+				  u8 profile)
 {
 	int ret = 0;
-
 	u8 set_profile_cmd[SET_CURVE_CMD_LENGTH];
 
 	if (profile == CURVE_PROFILE_ID) {
@@ -223,9 +233,9 @@ static int hanbo_hid_profile_send(struct hanbo_data *priv, int channel,
 		 * Sanity check curve profile, PWM duty cycles cannot decrease
 		 * the higher up the curve they are.
 		 */
-		for (i = SET_CURVE_CMD_LENGTH - 1; i > SET_CURVE_CMD_HEADER - 1; i--) {
+		for (i = SET_CURVE_CMD_LENGTH - 1; i > CURVE_PAYLOAD_OFFSET - 1; i--) {
 			set_profile_cmd[i] =
-				priv->channel_info[channel].pwm_points[i - SET_CURVE_CMD_HEADER];
+				priv->channel_info[channel].pwm_points[i - CURVE_PAYLOAD_OFFSET];
 			if (i != SET_CURVE_CMD_LENGTH - 1 &&
 			    set_profile_cmd[i + 1] < set_profile_cmd[i])
 				ret = -EINVAL;
@@ -233,21 +243,19 @@ static int hanbo_hid_profile_send(struct hanbo_data *priv, int channel,
 		if (ret < 0)
 			return ret;
 		ret = hanbo_hid_write_expanded(priv, set_profile_cmd, SET_CURVE_CMD_LENGTH);
-
 	/* If not sending a curve, we're setting a fixed profile */
-	} else {
+	} else if (profile > 0 && profile < CURVE_PROFILE_ID) {
 		memcpy(set_profile_cmd, set_pump_fan_cmd_template, SET_PROFILE_CMD_LENGTH);
+		/* Templates come with pump commands, replace with fan commands */
 		if (channel == FAN_CHANNEL)
 			set_profile_cmd[0] = 0x22;
-
 		set_profile_cmd[SET_PROFILE_ID_OFFSET] = profile;
 		/* Technically this value does nothing, kept as OEM software sends it */
-		set_profile_cmd[SET_PROFILE_PWM_OFFSET] = duty;
+		set_profile_cmd[SET_PROFILE_PWM_OFFSET] = profile_base_duties[profile];
 		ret = hanbo_hid_write_expanded(priv, set_profile_cmd, SET_PROFILE_CMD_LENGTH);
 	}
 	if (ret >= 0)
 		priv->channel_info[channel].active_profile = profile;
-
 	return ret;
 }
 
@@ -302,7 +310,6 @@ static int hanbo_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 
 	if (ret < 0)
 		return ret;
-
 	switch (type) {
 	case hwmon_temp:
 		*val = priv->temp_input[channel];
@@ -330,7 +337,7 @@ static int hanbo_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 	default:
 		return -EOPNOTSUPP; /* sysfs unreachable */
 	}
-	return 0;
+	return ret;
 }
 
 static int hanbo_hwmon_read_string(struct device *dev,
@@ -354,13 +361,11 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 			     u32 attr, int channel, long val)
 {
 	struct hanbo_data *priv = dev_get_drvdata(dev);
+	long degrees_c;
 	int ret = mutex_lock_interruptible(&priv->status_report_request_mutex);
 
 	if (ret < 0)
-		goto unlock_and_return;
-
-	long sane_val;
-
+		return ret;
 	/*
 	 * As writes generate acknowledgement reports the spinlock pattern
 	 * is used here to satisfy that we see them through.
@@ -368,6 +373,7 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 	spin_lock_bh(&priv->status_report_request_lock);
 	reinit_completion(&priv->status_report_received);
 	spin_unlock_bh(&priv->status_report_request_lock);
+
 	switch (type) {
 	/* Set CPU reference temperature */
 	case hwmon_temp:
@@ -375,20 +381,21 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 		case hwmon_temp_input:
 			/* Clamp out of range CPU temperatures */
 			if (val < 0) {
-				sane_val = 0;
+				degrees_c = 0;
 			} else {
-				sane_val = DIV_ROUND_CLOSEST(val, 1000);
-				if (sane_val > TEMPERATURE_MAX)
-					sane_val = TEMPERATURE_MAX;
+				degrees_c = DIV_ROUND_CLOSEST(val, 1000);
+				if (degrees_c > TEMPERATURE_MAX)
+					degrees_c = TEMPERATURE_MAX;
 			}
 			u8 set_cpu_temp_cmd[SET_CPU_TEMP_CMD_LENGTH];
 
 			memcpy(set_cpu_temp_cmd, set_vcpu_temp_cmd_template,
 			       SET_CPU_TEMP_CMD_LENGTH);
-			set_cpu_temp_cmd[SET_CPU_TEMP_CMD_OFFSET] = sane_val & 0xFF;
+			set_cpu_temp_cmd[SET_CPU_TEMP_PAYLOAD_OFFSET] = degrees_c & 0xFF;
 			ret = hanbo_hid_write_expanded(priv, set_cpu_temp_cmd,
 						       SET_CPU_TEMP_CMD_LENGTH);
-			priv->temp_input[1] = sane_val * 1000;
+			/* Store the final value for reading via sysfs */
+			priv->temp_input[1] = degrees_c * 1000;
 			if (ret < 0)
 				goto unlock_and_return;
 			break;
@@ -411,92 +418,59 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 			case FAN_CHANNEL:
 				switch (val) {
 				case 1:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
-								     0x14);
-					if (ret < 0)
-						goto unlock_and_return;
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
 					break;
 				case 2:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
-								     0x32);
-					if (ret < 0)
-						goto unlock_and_return;
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
 					break;
 				case 3:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
-								     0x50);
-					if (ret < 0)
-						goto unlock_and_return;
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
 					break;
 				case 4:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
-								     0x00);
-					if (ret < 0)
-						goto unlock_and_return;
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
 					break;
 				default:
 					ret = -EINVAL;
-					goto unlock_and_return;
 				}
 				break;
 			case PUMP_CHANNEL:
 				switch (val) {
 				case 1:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
-								     0x14);
-					if (ret < 0)
-						goto unlock_and_return;
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
 					break;
 				case 2:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
-								     0x32);
-					if (ret < 0)
-						goto unlock_and_return;
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
 					break;
 				case 3:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
-								     0x50);
-					if (ret < 0)
-						goto unlock_and_return;
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
 					break;
 				case 4:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF,
-								     0x00);
-					if (ret < 0)
-						goto unlock_and_return;
+					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
 					break;
 				default:
 					ret = -EINVAL;
-					goto unlock_and_return;
 				}
 				break;
 			default: /* sysfs unreachable */
 				ret = -EINVAL;
-				goto unlock_and_return;
 			}
 			break;
 		default: /* sysfs unreachable */
 			ret = -EOPNOTSUPP;
-			goto unlock_and_return;
 		}
 		break;
 	default: /* sysfs unreachable */
 		ret = -EOPNOTSUPP;
-		goto unlock_and_return;
 	}
 
 unlock_and_return:
+	/* If we've failed to send for whatever reason, cancel the completion */
 	if (ret < 0) {
-		/* If we've failed to send for whatever reason, cancel the completion */
 		spin_lock(&priv->status_report_request_lock);
 		if (!completion_done(&priv->status_report_received))
 			complete_all(&priv->status_report_received);
-
 		spin_unlock(&priv->status_report_request_lock);
-	} else {
-		ret = 0;
 	}
-
 	mutex_unlock(&priv->status_report_request_mutex);
 	return ret;
 }
@@ -643,13 +617,25 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 	struct hanbo_data *priv = seqf->private;
 	int i;
 
-	for (i = 0; i < 8; i++)
+	for (i = 0; i < FIRMWARE_VERSION_LENGTH; i++)
 		seq_printf(seqf, "%02X", priv->firmware_version[i]);
+	seq_puts(seqf, "\n");
+	return 0;
+}
 
+static int serial_number_show(struct seq_file *seqf, void *unused)
+{
+	struct hanbo_data *priv = seqf->private;
+	int i;
+
+	for (i = 0; i < SERIAL_NUMBER_LENGTH; i++)
+		seq_printf(seqf, "%c", priv->serial_number[i]);
+	seq_puts(seqf, "\n");
 	return 0;
 }
 
 DEFINE_SHOW_ATTRIBUTE(firmware_version);
+DEFINE_SHOW_ATTRIBUTE(serial_number);
 
 static void hanbo_debugfs_init(struct hanbo_data *priv)
 {
@@ -664,6 +650,8 @@ static void hanbo_debugfs_init(struct hanbo_data *priv)
 	priv->debugfs = debugfs_create_dir(name, NULL);
 	debugfs_create_file("firmware_version", 0444, priv->debugfs, priv,
 			    &firmware_version_fops);
+	debugfs_create_file("serial_number", 0444, priv->debugfs, priv,
+			    &serial_number_fops);
 }
 
 /*
@@ -674,45 +662,49 @@ static int hanbo_raw_event(struct hid_device *hdev, struct hid_report *report,
 			   u8 *data, int size)
 {
 	struct hanbo_data *priv = hid_get_drvdata(hdev);
-	unsigned char code;
+	unsigned char rid;
+	int ret;
 
 	if (size != MAX_REPORT_LENGTH)
-		return -1;
+		return -EPROTO;
 
-	code = data[0];
+	rid = data[0];
 
-	switch (code) {
+	switch (rid) {
 	/* Status reports with payload */
 	case FIRMWARE_STATUS_REPORT_ID:
-		if (hanbo_hid_validate_header(SHORT_ACK, (u8 []){code, 0x02}, data, 34)) {
-			int i;
+		ret = hanbo_hid_validate_header(SHORT_ACK_LENGTH, data, 34);
+		if (ret < 0)
+			goto fail_and_return;
+		int i;
 
-			for (i = 0; i < 8; i++)
-				priv->firmware_version[i] = data[FIRMWARE_VERSION_OFFSET + i];
-
-			if (!completion_done(&priv->fw_version_processed))
-				complete_all(&priv->fw_version_processed);
-		}
+		for (i = 0; i < FIRMWARE_VERSION_LENGTH; i++)
+			priv->firmware_version[i] = data[FIRMWARE_VERSION_OFFSET + i];
+		for (i = 0; i < SERIAL_NUMBER_LENGTH; i++)
+			priv->serial_number[i] = data[SERIAL_NUMBER_OFFSET + i];
+		if (!completion_done(&priv->fw_version_processed))
+			complete_all(&priv->fw_version_processed);
 		break;
 	case PUMP_STATUS_REPORT_ID:
-		if (hanbo_hid_validate_header(REG_ACK, (u8 []){code, 0x02, 0x01}, data, 11)) {
-			priv->temp_input[0] = (data[5] * 1000) + (data[6] * 100);
-			priv->channel_info[PUMP_CHANNEL].tacho = get_unaligned_be16(data + 7);
-			priv->channel_info[PUMP_CHANNEL].attained_pwm = data[10];
-			priv->channel_info[PUMP_CHANNEL].commanded_pwm = data[9];
-			if (priv->channel_info[PUMP_CHANNEL].active_profile != CURVE_PROFILE_ID)
-				priv->channel_info[PUMP_CHANNEL].active_profile = data[3];
-		}
+		ret = hanbo_hid_validate_header(REG_ACK_LENGTH, data, 11);
+		if (ret < 0)
+			goto fail_and_return;
+		priv->temp_input[0] = (data[5] * 1000) + (data[6] * 100);
+		priv->channel_info[PUMP_CHANNEL].tacho = get_unaligned_be16(data + 7);
+		priv->channel_info[PUMP_CHANNEL].attained_pwm = data[10];
+		priv->channel_info[PUMP_CHANNEL].commanded_pwm = data[9];
+		if (priv->channel_info[PUMP_CHANNEL].active_profile != CURVE_PROFILE_ID)
+			priv->channel_info[PUMP_CHANNEL].active_profile = data[3];
 		break;
 	case FAN_STATUS_REPORT_ID:
-		if (hanbo_hid_validate_header(LONG_ACK,
-					      (u8 []){code, 0x02, 0x02, 0x01}, data, 10)) {
-			priv->channel_info[FAN_CHANNEL].tacho = get_unaligned_be16(data + 6);
-			priv->channel_info[FAN_CHANNEL].attained_pwm = data[9];
-			priv->channel_info[FAN_CHANNEL].commanded_pwm = data[8];
-			if (priv->channel_info[FAN_CHANNEL].active_profile != CURVE_PROFILE_ID)
-				priv->channel_info[FAN_CHANNEL].active_profile = data[4];
-		}
+		ret = hanbo_hid_validate_header(LONG_ACK_LENGTH, data, 10);
+		if (ret < 0)
+			goto fail_and_return;
+		priv->channel_info[FAN_CHANNEL].tacho = get_unaligned_be16(data + 6);
+		priv->channel_info[FAN_CHANNEL].attained_pwm = data[9];
+		priv->channel_info[FAN_CHANNEL].commanded_pwm = data[8];
+		if (priv->channel_info[FAN_CHANNEL].active_profile != CURVE_PROFILE_ID)
+			priv->channel_info[FAN_CHANNEL].active_profile = data[4];
 		break;
 	/* Acknowledgement reports for commands */
 	case PUMP_ACK_REPORT_ID:
@@ -721,32 +713,32 @@ static int hanbo_raw_event(struct hid_device *hdev, struct hid_report *report,
 	case CPU_TEMP_ACK_REPORT_ID:
 	case FAN_CURVE_ACK_REPORT_ID:
 	case RGB_MODE_SET_ACK_REPORT_ID:
-		if (!hanbo_hid_validate_header(REG_ACK, (u8 []){code, 0x02, 0x01}, data, 3))
+		ret = hanbo_hid_validate_header(REG_ACK_LENGTH, data, 3);
+		if (ret < 0) {
 			hid_warn(hdev, "Received corrupted thermal ACK report");
+			goto fail_and_return;
+		}
 		break;
 	/* Here for completeness, unlikely these are triggered from driver */
 	case BRIGHTNESS_ACK_REPORT_ID:
 	case BRIGHTNESS_STATUS_REPORT_ID:
 	case RGB_MODE_STATUS_REPORT_ID:
-		if (!hanbo_hid_validate_header(SHORT_ACK, (u8 []){code, 0x02}, data, 4))
+		ret = hanbo_hid_validate_header(SHORT_ACK_LENGTH, data, 4);
+		if (ret < 0) {
 			hid_warn(hdev, "Received corrupted RGB ACK report");
+			goto fail_and_return;
+		}
 		break;
 	default:
-		return -1;
+		return -EPROTO;
 	}
 	spin_lock(&priv->status_report_request_lock);
 	if (!completion_done(&priv->status_report_received))
 		complete_all(&priv->status_report_received);
-
 	spin_unlock(&priv->status_report_request_lock);
 	priv->updated = jiffies;
-	return 0;
-}
-
-/* This likely serves no purpose other than possibly online reset */
-static int __maybe_unused hanbo_reset_resume(struct hid_device *hdev)
-{
-	return 0;
+fail_and_return:
+	return ret;
 }
 
 static const struct hid_device_id hanbo_table[] = {
@@ -883,9 +875,6 @@ static struct hid_driver hanbo_driver = {
 	.probe = hanbo_probe,
 	.remove = hanbo_remove,
 	.raw_event = hanbo_raw_event,
-#ifdef CONFIG_PM
-	.reset_resume = hanbo_reset_resume,
-#endif
 };
 
 static int __init hanbo_init(void)

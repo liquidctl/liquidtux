@@ -7,7 +7,7 @@ Supported devices:
 
 * Razer Hanbo Chroma 360mm
 
-Author: Joseph East
+Author: Joseph East <eastyjr@gmail.com>
 
 Description
 -----------
