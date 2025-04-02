@@ -182,7 +182,5 @@ Debugfs entries
 
 ================ =======================
 firmware_version Device firmware version
+serial_number    Device serial number
 ================ =======================
-============= ====================
-serial_number Device serial number
-============= ====================
