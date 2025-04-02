@@ -76,6 +76,7 @@ static const u8 ack_header_type_b[] = { 0x00, 0x02, 0x02, 0x01 };
 /* Convenience labels specific to this driver */
 #define PUMP_CHANNEL			0
 #define FAN_CHANNEL			1
+#define QUIET_PROFILE_ID		1
 #define CURVE_PROFILE_ID		4
 
 static const char *const hanbo_temp_label[] = {
@@ -221,6 +222,10 @@ static int hanbo_hid_profile_send(struct hanbo_data *priv, int channel,
 	int ret = 0;
 	u8 set_profile_cmd[SET_CURVE_CMD_LENGTH];
 
+	if (channel < PUMP_CHANNEL || channel > FAN_CHANNEL)
+		return -EINVAL; /* sysfs unreachable */
+	if (profile < QUIET_PROFILE_ID || profile > CURVE_PROFILE_ID)
+		return -EINVAL;
 	if (profile == CURVE_PROFILE_ID) {
 		memcpy(set_profile_cmd, set_pump_fan_curve_cmd_template, SET_CURVE_CMD_LENGTH);
 		/* Templates come with pump commands, replace with fan commands */
@@ -243,8 +248,7 @@ static int hanbo_hid_profile_send(struct hanbo_data *priv, int channel,
 		if (ret < 0)
 			return ret;
 		ret = hanbo_hid_write_expanded(priv, set_profile_cmd, SET_CURVE_CMD_LENGTH);
-	/* If not sending a curve, we're setting a fixed profile */
-	} else if (profile > 0 && profile < CURVE_PROFILE_ID) {
+	} else { /* sending a profile */
 		memcpy(set_profile_cmd, set_pump_fan_cmd_template, SET_PROFILE_CMD_LENGTH);
 		/* Templates come with pump commands, replace with fan commands */
 		if (channel == FAN_CHANNEL)
@@ -337,6 +341,8 @@ static int hanbo_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 	default:
 		return -EOPNOTSUPP; /* sysfs unreachable */
 	}
+	if (ret > 0)
+		return 0;
 	return ret;
 }
 
@@ -375,10 +381,11 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 	spin_unlock_bh(&priv->status_report_request_lock);
 
 	switch (type) {
-	/* Set CPU reference temperature */
-	case hwmon_temp:
+	case hwmon_temp: /* Set CPU reference temperature */
 		switch (attr) {
 		case hwmon_temp_input:
+			u8 set_cpu_temp_cmd[SET_CPU_TEMP_CMD_LENGTH];
+
 			/* Clamp out of range CPU temperatures */
 			if (val < 0) {
 				degrees_c = 0;
@@ -387,17 +394,15 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 				if (degrees_c > TEMPERATURE_MAX)
 					degrees_c = TEMPERATURE_MAX;
 			}
-			u8 set_cpu_temp_cmd[SET_CPU_TEMP_CMD_LENGTH];
-
 			memcpy(set_cpu_temp_cmd, set_vcpu_temp_cmd_template,
 			       SET_CPU_TEMP_CMD_LENGTH);
 			set_cpu_temp_cmd[SET_CPU_TEMP_PAYLOAD_OFFSET] = degrees_c & 0xFF;
 			ret = hanbo_hid_write_expanded(priv, set_cpu_temp_cmd,
 						       SET_CPU_TEMP_CMD_LENGTH);
-			/* Store the final value for reading via sysfs */
-			priv->temp_input[1] = degrees_c * 1000;
 			if (ret < 0)
 				goto unlock_and_return;
+			/* Store the final value for reading via sysfs */
+			priv->temp_input[1] = degrees_c * 1000;
 			break;
 
 		default: /* sysfs unreachable */
@@ -405,55 +410,10 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 			goto unlock_and_return;
 		}
 		break;
-	/*
-	 * Set a profile
-	 * The PWM duty as the last argument in hanbo_hid_profile_send appears
-	 * to do nothing, but it is included to match the behaviour of the OEM
-	 * software.
-	 */
-	case hwmon_pwm:
+	case hwmon_pwm: /* Set a profile */
 		switch (attr) {
 		case hwmon_pwm_enable:
-			switch (channel) {
-			case FAN_CHANNEL:
-				switch (val) {
-				case 1:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
-					break;
-				case 2:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
-					break;
-				case 3:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
-					break;
-				case 4:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
-					break;
-				default:
-					ret = -EINVAL;
-				}
-				break;
-			case PUMP_CHANNEL:
-				switch (val) {
-				case 1:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
-					break;
-				case 2:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
-					break;
-				case 3:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
-					break;
-				case 4:
-					ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
-					break;
-				default:
-					ret = -EINVAL;
-				}
-				break;
-			default: /* sysfs unreachable */
-				ret = -EINVAL;
-			}
+			ret = hanbo_hid_profile_send(priv, channel, val & 0xFF);
 			break;
 		default: /* sysfs unreachable */
 			ret = -EOPNOTSUPP;
@@ -472,6 +432,8 @@ unlock_and_return:
 		spin_unlock(&priv->status_report_request_lock);
 	}
 	mutex_unlock(&priv->status_report_request_mutex);
+	if (ret > 0)
+		return 0;
 	return ret;
 }
 
@@ -834,13 +796,14 @@ static int hanbo_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	hid_device_io_start(hdev);
 	/*
 	 * The Razer Hanbo Chroma does not have a mandatory startup sequence.
-	 * However there are things that can be done during bring up to make
-	 * state tracking easier throughout the driver lifecycle.
-	 * These are done in this init function.
+	 * This function ensures a consistent startup for state tracking
+	 * purposes.
 	 */
 	ret = hanbo_drv_init(hdev);
-	if (ret < 0)
-		hid_warn(hdev, "Driver init failed with %d\n", ret);
+	if (ret < 0) {
+		hid_err(hdev, "Driver init failed with %d\n", ret);
+		goto fail_and_close;
+	}
 
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, DRIVER_NAME,
 							  priv, &hanbo_chip_info, hanbo_groups);

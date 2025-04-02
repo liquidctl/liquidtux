@@ -15,8 +15,8 @@ Description
 This driver enables hardware monitoring support for the Razer Hanbo Chroma
 all-in-one CPU liquid coolers. Available sensors are pump and fan speeds in RPM,
 their PWM duty cycles as percentages, coolant temperature and other state
-trackers. Also available through debugfs is the firmware version. This driver
-has been developed against OEM firmware 1.2.0.
+trackers. Also available through debugfs is the firmware version and serial
+number. This driver has been developed against OEM firmware 1.2.0.
 
 Like the OEM software the pump and fans are unable to be directly controlled.
 Instead there are four profile modes which are selectable via sysfs to change
@@ -161,20 +161,20 @@ Sysfs entries
 -------------
 
 ============= =============================================
-fan1_input    R: Pump speed (in rpm)
-fan2_input    R: Fan speed (in rpm)
-temp1_input   R: Coolant temperature (in millidegrees Celsius)
-temp2_input   RW: CPU feedback temperature (in millidegrees Celsius)
-pwm1          R: Pump achieved PWM rate as a percentage
-pwm2          R: Fan achieved PWM rate as a percentage
+fan1_input    R: Pump speed (rpm)
+fan2_input    R: Fan speed (rpm)
+temp1_input   R: Coolant temperature (millidegrees Celsius)
+temp2_input   RW: CPU feedback temperature (millidegrees Celsius)
+pwm1          R: Pump achieved PWM duty cycle (%)
+pwm2          R: Fan achieved PWM duty cycle (%)
 pwm1_enable   R: Get pump active profile
               W: Set profile from 1-4
 pwm2_enable   R: Get fan active profile
               W: Set profile from 1-4
-pwm1_setpoint R: Commanded RPM for the pump
-pwm2_setpoint R: Commanded RPM for the fan
-temp1_auto... W: Pump curve data points, PWM rate as a percentage.
-temp2_auto... W: Fan curve data points, PWM rate as a percentage.
+pwm1_setpoint R: Pump commanded PWM duty cycle (%)
+pwm2_setpoint R: Fan commanded PWM duty cycle (%)
+temp1_auto... W: Pump curve data points, PWM duty cycle (%)
+temp2_auto... W: Fan curve data points, PWM duty cycle (%)
 ============= =============================================
 
 Debugfs entries
@@ -183,3 +183,6 @@ Debugfs entries
 ================ =======================
 firmware_version Device firmware version
 ================ =======================
+============= ====================
+serial_number Device serial number
+============= ====================
