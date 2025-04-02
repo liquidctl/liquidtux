@@ -373,7 +373,7 @@ static int hanbo_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 	if (ret < 0)
 		return ret;
 	/*
-	 * As writes generate acknowledgement reports the spinlock pattern
+	 * As writes generate acknowledgment reports the spinlock pattern
 	 * is used here to satisfy that we see them through.
 	 */
 	spin_lock_bh(&priv->status_report_request_lock);
@@ -668,7 +668,7 @@ static int hanbo_raw_event(struct hid_device *hdev, struct hid_report *report,
 		if (priv->channel_info[FAN_CHANNEL].active_profile != CURVE_PROFILE_ID)
 			priv->channel_info[FAN_CHANNEL].active_profile = data[4];
 		break;
-	/* Acknowledgement reports for commands */
+	/* Acknowledgment reports for commands */
 	case PUMP_ACK_REPORT_ID:
 	case PUMP_CURVE_ACK_REPORT_ID:
 	case FAN_PROFILE_ACK_REPORT_ID:
