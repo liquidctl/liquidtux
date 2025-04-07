@@ -30,7 +30,7 @@
 /* Firmware command response signatures */
 #define FIRMWARE_STATUS_REPORT_ID	0x02
 #define PUMP_STATUS_REPORT_ID		0x13
-#define PUMP_ACK_REPORT_ID		0x15
+#define PUMP_PROFILE_ACK_REPORT_ID	0x15
 #define PUMP_CURVE_ACK_REPORT_ID	0x19
 #define FAN_STATUS_REPORT_ID		0x21
 #define FAN_PROFILE_ACK_REPORT_ID	0x23
@@ -96,6 +96,7 @@ struct hanbo_pwm_channel {
 	u8 attained_pwm;
 	u8 active_profile;
 	u8 pwm_points[CUSTOM_CURVE_POINTS];
+	u8 profile_sticky;
 };
 
 /* Global data structure for HID and hwmon functions */
@@ -248,6 +249,7 @@ static int hanbo_hid_profile_send(struct hanbo_data *priv, int channel,
 		if (ret < 0)
 			return ret;
 		ret = hanbo_hid_write_expanded(priv, set_profile_cmd, SET_CURVE_CMD_LENGTH);
+		priv->channel_info[channel].profile_sticky = true;
 	} else { /* sending a profile */
 		memcpy(set_profile_cmd, set_pump_fan_cmd_template, SET_PROFILE_CMD_LENGTH);
 		/* Templates come with pump commands, replace with fan commands */
@@ -257,6 +259,7 @@ static int hanbo_hid_profile_send(struct hanbo_data *priv, int channel,
 		/* Technically this value does nothing, kept as OEM software sends it */
 		set_profile_cmd[SET_PROFILE_PWM_OFFSET] = profile_base_duties[profile];
 		ret = hanbo_hid_write_expanded(priv, set_profile_cmd, SET_PROFILE_CMD_LENGTH);
+		priv->channel_info[channel].profile_sticky = false;
 	}
 	if (ret >= 0)
 		priv->channel_info[channel].active_profile = profile;
@@ -324,12 +327,7 @@ static int hanbo_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
-			/*
-			 * Scaling hack for lm-sensors to show real-er PWM readings.
-			 * The Hanbo generally reports base 10 values-as-hex, it does
-			 * not utilise the complete 8-bit number space.
-			 */
-			*val = ((int)(priv->channel_info[channel].attained_pwm * 2) & 0xFF);
+			*val = ((int)(priv->channel_info[channel].attained_pwm) & 0xFF);
 			break;
 		case hwmon_pwm_enable:
 			*val = priv->channel_info[channel].active_profile;
@@ -655,7 +653,7 @@ static int hanbo_raw_event(struct hid_device *hdev, struct hid_report *report,
 		priv->channel_info[PUMP_CHANNEL].tacho = get_unaligned_be16(data + 7);
 		priv->channel_info[PUMP_CHANNEL].attained_pwm = data[10];
 		priv->channel_info[PUMP_CHANNEL].commanded_pwm = data[9];
-		if (priv->channel_info[PUMP_CHANNEL].active_profile != CURVE_PROFILE_ID)
+		if (!priv->channel_info[PUMP_CHANNEL].profile_sticky)
 			priv->channel_info[PUMP_CHANNEL].active_profile = data[3];
 		break;
 	case FAN_STATUS_REPORT_ID:
@@ -665,20 +663,35 @@ static int hanbo_raw_event(struct hid_device *hdev, struct hid_report *report,
 		priv->channel_info[FAN_CHANNEL].tacho = get_unaligned_be16(data + 6);
 		priv->channel_info[FAN_CHANNEL].attained_pwm = data[9];
 		priv->channel_info[FAN_CHANNEL].commanded_pwm = data[8];
-		if (priv->channel_info[FAN_CHANNEL].active_profile != CURVE_PROFILE_ID)
+		if (!priv->channel_info[FAN_CHANNEL].profile_sticky)
 			priv->channel_info[FAN_CHANNEL].active_profile = data[4];
 		break;
 	/* Acknowledgment reports for commands */
-	case PUMP_ACK_REPORT_ID:
 	case PUMP_CURVE_ACK_REPORT_ID:
+	case FAN_CURVE_ACK_REPORT_ID:
+	case PUMP_PROFILE_ACK_REPORT_ID:
 	case FAN_PROFILE_ACK_REPORT_ID:
 	case CPU_TEMP_ACK_REPORT_ID:
-	case FAN_CURVE_ACK_REPORT_ID:
 	case RGB_MODE_SET_ACK_REPORT_ID:
 		ret = hanbo_hid_validate_header(REG_ACK_LENGTH, data, 3);
 		if (ret < 0) {
-			hid_warn(hdev, "Received corrupted thermal ACK report");
+			hid_warn(hdev, "Received corrupted mode ACK report");
 			goto fail_and_return;
+		}
+		/*
+		 * Passively update driver state if usermode apps are commanding
+		 * the device.
+		 */
+		if (rid == PUMP_CURVE_ACK_REPORT_ID) {
+			priv->channel_info[PUMP_CHANNEL].active_profile = CURVE_PROFILE_ID;
+			priv->channel_info[PUMP_CHANNEL].profile_sticky = true;
+		} else if (rid == FAN_CURVE_ACK_REPORT_ID) {
+			priv->channel_info[FAN_CHANNEL].active_profile = CURVE_PROFILE_ID;
+			priv->channel_info[FAN_CHANNEL].profile_sticky = true;
+		} else if (rid == PUMP_PROFILE_ACK_REPORT_ID) {
+			priv->channel_info[PUMP_CHANNEL].profile_sticky = false;
+		} else if (rid == FAN_PROFILE_ACK_REPORT_ID) {
+			priv->channel_info[FAN_CHANNEL].profile_sticky = false;
 		}
 		break;
 	/* Here for completeness, unlikely these are triggered from driver */
@@ -687,7 +700,7 @@ static int hanbo_raw_event(struct hid_device *hdev, struct hid_report *report,
 	case RGB_MODE_STATUS_REPORT_ID:
 		ret = hanbo_hid_validate_header(SHORT_ACK_LENGTH, data, 4);
 		if (ret < 0) {
-			hid_warn(hdev, "Received corrupted RGB ACK report");
+			hid_warn(hdev, "Received corrupted lighting ACK report");
 			goto fail_and_return;
 		}
 		break;
@@ -739,6 +752,8 @@ static int hanbo_drv_init(struct hid_device *hdev)
 	memcpy(priv->channel_info[FAN_CHANNEL].pwm_points, default_fan_curve, CUSTOM_CURVE_POINTS);
 	memcpy(priv->channel_info[PUMP_CHANNEL].pwm_points, default_pump_curve,
 	       CUSTOM_CURVE_POINTS);
+	priv->channel_info[FAN_CHANNEL].profile_sticky = false;
+	priv->channel_info[PUMP_CHANNEL].profile_sticky = false;
 	return ret;
 }
 

@@ -89,14 +89,13 @@ using the ``tempX_auto_pointY_pwm`` nodes in sysfs. e.g. to set fan curve point
 ``echo 40 > /sys/class/<...>/hwmonZ/temp2_auto_point2_pwm``
 
 When writing to these nodes, the driver will accept values between 20-100
-inclusive (x14-x64) and clamp invalid values to the relevant extreme. Curve PWM
-values must be equal to or greater than the previous point as the curve
-progresses. Switching to profile 4, fan or pump, sanity checks the associated
-curve before uploading to the AIO. An invalid curve is reported upon attempting
-to switch to profile 4 via ``write error: Invalid argument``, in which case no
-changes are made to the AIO. Should profile 4 be active and a curve point is
-altered via sysfs you will need to set profile 4 again on that channel to upload
-the new curve.
+inclusive (x14-x64) and clamp invalid values to the relevant extreme. PWM values
+must be monotonically increasing along the curve. Switching to profile 4, fan or
+pump, sanity checks the associated curve before uploading to the AIO. An invalid
+curve is reported upon attempting to switch to profile 4 as
+``write error: Invalid argument``, in which case no changes are made to the AIO.
+Should profile 4 be active and a curve point is altered via sysfs you will need
+to set profile 4 again on that channel to upload the new curve.
 
 AIO Reference Temperature
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -124,12 +123,14 @@ Driver Lifecycle
 
 The Razer Hanbo Chroma does not provide sufficient reporting to reconstruct its
 complete internal state should the driver or other user of it happen to reset.
-One side effect of this is that it is impossible to determine if profile 4
-specifically is actually running on the AIO; the driver had to have been active
-at the time when the command was sent and be the origin of that command. This is
-not the case for other profiles. If the driver initiated curve mode, it will
-make profile 4 'sticky' when reading ``pwmX_enable`` until the driver is
-commanded to change profile.
+One side effect of this is that the state of profile 4 is implied on the AIO as
+there is no way to query it. The driver had to have been active at the time,
+issued the command, or captured its ACK report after something else did.
+If the driver believes that profile 4 is active regardless of how, it will
+present profile 4 when reading ``pwmX_enable``.
+
+This is not the case for other profiles which are explicitly defined in the
+standard status reports.
 
 Similarly, the CPU reference temperature at ``temp2_input`` only reflects what
 the driver previously sent to the AIO in this session when read, not what the
@@ -140,6 +141,12 @@ temperature is set to 30 degrees C and the internal data structures are
 initialized with basic fan and pump curves. This is to prevent activation of
 profile 4 with unknown curve parameters. The driver does not set any profile
 upon being loaded.
+
+As writing to sysfs often requires administrative level privileges, naturally
+most usermode implementations write to the device directly using udev to provide
+access. Changing the state of the AIO in this way won't necessarily be reflected
+in the driver, though the driver will intercept reports from the AIO and attempt
+to update its internal state to match.
 
 The driver state is retained during sleep and resume but will be lost on
 shutdown. If one intends to use profile 4 as their default it should be
