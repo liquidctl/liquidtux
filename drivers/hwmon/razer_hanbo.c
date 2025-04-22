@@ -61,12 +61,11 @@ static const u8 ack_header_type_b[] = { 0x00, 0x02, 0x02, 0x01 };
 #define SET_PROFILE_CMD_LENGTH		4
 #define SET_CURVE_CMD_LENGTH		13
 #define SET_CPU_TEMP_CMD_LENGTH		6
-#define FIRMWARE_VERSION_LENGTH		8
 #define SERIAL_NUMBER_LENGTH		15
 #define SET_PROFILE_ID_OFFSET		2
 #define SET_PROFILE_PWM_OFFSET		3
 #define SET_CPU_TEMP_PAYLOAD_OFFSET	2
-#define FIRMWARE_VERSION_OFFSET		26
+#define FIRMWARE_VERSION_OFFSET		29
 #define SERIAL_NUMBER_OFFSET		3
 #define CURVE_PAYLOAD_OFFSET		4
 #define SHORT_ACK_LENGTH		2
@@ -117,7 +116,7 @@ struct hanbo_data {
 	struct hanbo_pwm_channel channel_info[2];
 	/* Staging buffer for sending HID packets */
 	u8 *buffer;
-	u8 firmware_version[8];
+	u8 firmware_version[6];
 	char serial_number[15];
 	unsigned long updated;	/* jiffies */
 };
@@ -575,11 +574,8 @@ static const struct hwmon_chip_info hanbo_chip_info = {
 static int firmware_version_show(struct seq_file *seqf, void *unused)
 {
 	struct hanbo_data *priv = seqf->private;
-	int i;
 
-	for (i = 0; i < FIRMWARE_VERSION_LENGTH; i++)
-		seq_printf(seqf, "%02X", priv->firmware_version[i]);
-	seq_puts(seqf, "\n");
+	seq_printf(seqf, "%s\n", priv->firmware_version);
 	return 0;
 }
 
@@ -601,7 +597,7 @@ static void hanbo_debugfs_init(struct hanbo_data *priv)
 {
 	char name[64];
 
-	if (priv->firmware_version[0] != 0x80)
+	if (priv->firmware_version[0] == '\0')
 		return;	/* When here, nothing to show in debugfs */
 
 	scnprintf(name, sizeof(name), "%s-%s", DRIVER_NAME,
@@ -637,9 +633,12 @@ static int hanbo_raw_event(struct hid_device *hdev, struct hid_report *report,
 		if (ret < 0)
 			goto fail_and_return;
 		int i;
+		char major = 0x30 + data[FIRMWARE_VERSION_OFFSET];
+		char minor = 0x30 + (data[FIRMWARE_VERSION_OFFSET + 1] >> 4 & 0x0F);
+		char patch = 0x30 + (data[FIRMWARE_VERSION_OFFSET + 1] & 0x0F);
 
-		for (i = 0; i < FIRMWARE_VERSION_LENGTH; i++)
-			priv->firmware_version[i] = data[FIRMWARE_VERSION_OFFSET + i];
+		snprintf(priv->firmware_version, sizeof(priv->firmware_version),
+			 "%c.%c.%c", major, minor, patch);
 		for (i = 0; i < SERIAL_NUMBER_LENGTH; i++)
 			priv->serial_number[i] = data[SERIAL_NUMBER_OFFSET + i];
 		if (!completion_done(&priv->fw_version_processed))
@@ -729,6 +728,7 @@ static int hanbo_drv_init(struct hid_device *hdev)
 	struct hanbo_data *priv = hid_get_drvdata(hdev);
 	int ret;
 
+	priv->firmware_version[0] = '\0';
 	ret = hanbo_hid_write_expanded(priv, get_firmware_ver_cmd,
 				       GET_FIRMWARE_VER_CMD_LENGTH);
 	if (ret < 0)
