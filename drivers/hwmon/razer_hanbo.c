@@ -66,7 +66,7 @@ static const u8 ack_header_type_b[] = { 0x00, 0x02, 0x02, 0x01 };
 #define SET_PROFILE_PWM_OFFSET		3
 #define SET_CPU_TEMP_PAYLOAD_OFFSET	2
 #define FIRMWARE_VERSION_OFFSET		29
-#define SERIAL_NUMBER_OFFSET		3
+#define SERIAL_NUMBER_OFFSET		2
 #define CURVE_PAYLOAD_OFFSET		4
 #define SHORT_ACK_LENGTH		2
 #define REG_ACK_LENGTH			3
