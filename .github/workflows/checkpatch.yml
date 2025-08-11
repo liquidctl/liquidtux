@@ -8,10 +8,10 @@ jobs:
     steps:
       - run: sudo apt-get update
       - run: sudo apt-get install -y codespell
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: src
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: torvalds/linux
           path: linux
