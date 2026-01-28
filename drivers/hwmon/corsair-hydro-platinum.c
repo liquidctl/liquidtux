@@ -87,11 +87,11 @@ DECLARE_CRC8_TABLE(corsair_crc8_table);
 struct hydro_platinum_data {
 	struct hid_device *hdev;
 	struct device *hwmon_dev;
-	struct mutex lock;
+	struct mutex lock; /* lock for transfer buffer and data access */
 	u8 *tx_buffer;
 	u8 *rx_buffer;
 	u8 sequence;
-	
+
 	/* Sensor values */
 	u16 fan_speeds[MAX_FAN_COUNT];
 	u8 fan_duty[MAX_FAN_COUNT];
@@ -103,14 +103,14 @@ struct hydro_platinum_data {
 	u8 target_pump_mode;
 	u8 target_fan_mode[MAX_FAN_COUNT];
 	u8 target_fan_duty[MAX_FAN_COUNT];
-	
+
 	/* Detected configuration */
 	int fan_count;
 	const char *model_name;
 	u8 fw_version[3];
-	
+
 	struct completion wait_for_report;
-	
+
 	unsigned long updated;
 	bool valid;
 };
@@ -138,44 +138,47 @@ static void hydro_platinum_init_crc(void)
  *
  * Constructs the report buffer with CRC and sends it via `hid_hw_raw_request`.
  */
-static int hydro_platinum_send_command(struct hydro_platinum_data *priv, u8 feature, u8 command, u8 *data, int data_len)
+static int hydro_platinum_send_command(struct hydro_platinum_data *priv, u8 feature, u8 command,
+				       u8 *data, int data_len)
 {
 	int ret;
 	int start_at;
-	
-	/* 
+
+	/*
 	 * Construct 65-byte buffer with Report ID 0 padding.
-	 * Some devices/firmware revisions require the alignment of 64-byte payload 
+	 * Some devices/firmware revisions require the alignment of 64-byte payload
 	 * to be offset by the Report ID byte even in Control Transfers.
 	 */
 	memset(priv->tx_buffer, 0, REPORT_LENGTH + 1);
-	
+
 	priv->tx_buffer[0] = 0x00; /* Report ID Padding */
 	priv->tx_buffer[1] = CMD_WRITE_PREFIX;
-	
+
 	/* Sequence and feature/command logic */
 	priv->sequence = (priv->sequence % 31) + 1;
 	priv->tx_buffer[2] = (priv->sequence << 3) | feature;
 	priv->tx_buffer[3] = command;
 	start_at = 4;
-	
-	if (data && data_len > 0) {
-		memcpy(priv->tx_buffer + start_at, data, min(data_len, REPORT_LENGTH - start_at - 1));
-	}
-	
+
+	if (data && data_len > 0)
+		memcpy(priv->tx_buffer + start_at, data,
+		       min(data_len, REPORT_LENGTH - start_at - 1));
+
 	/* Calculate CRC over buf[2] to buf[REPORT_LENGTH-1+1] */
 	/* Payload is buf[1]..buf[64]. CRC is usually last byte of payload. */
-	priv->tx_buffer[REPORT_LENGTH] = crc8(corsair_crc8_table, priv->tx_buffer + 2, REPORT_LENGTH - 2, 0);
+	priv->tx_buffer[REPORT_LENGTH] = crc8(corsair_crc8_table, priv->tx_buffer + 2,
+					      REPORT_LENGTH - 2, 0);
 
 	/* Send Report - 65 bytes */
-	
+
 	/* Use HID_REQ_SET_REPORT (Control Transfer) */
 	ret = hid_hw_raw_request(priv->hdev, 0 /* Report ID */, priv->tx_buffer, REPORT_LENGTH + 1,
 				 HID_OUTPUT_REPORT, HID_REQ_SET_REPORT);
-	
+
 	/* raw_request returns number of bytes written on success */
-	if (ret > 0) ret = 0;
-	
+	if (ret > 0)
+		ret = 0;
+
 	return ret;
 }
 
@@ -190,7 +193,8 @@ static int hydro_platinum_send_command(struct hydro_platinum_data *priv, u8 feat
  * Sends a command and waits up to 500ms for an Input Report on the Interrupt IN endpoint.
  * This ensures strict command-response ordering to prevent device confusion.
  */
-static int hydro_platinum_transaction(struct hydro_platinum_data *priv, u8 feature, u8 command, u8 *data, int data_len)
+static int hydro_platinum_transaction(struct hydro_platinum_data *priv, u8 feature, u8 command,
+				      u8 *data, int data_len)
 {
 	int ret;
 
@@ -198,24 +202,26 @@ static int hydro_platinum_transaction(struct hydro_platinum_data *priv, u8 featu
 
 	ret = hydro_platinum_send_command(priv, feature, command, data, data_len);
 	if (ret < 0) {
-		dev_err_ratelimited(&priv->hdev->dev, "Failed to send command %02x: %d\n", command, ret);
+		dev_err_ratelimited(&priv->hdev->dev, "Failed to send command %02x: %d\n",
+				    command, ret);
 		return ret;
 	}
 
-	ret = wait_for_completion_interruptible_timeout(&priv->wait_for_report, msecs_to_jiffies(500));
+	ret = wait_for_completion_interruptible_timeout(&priv->wait_for_report,
+							msecs_to_jiffies(500));
 	if (ret == 0) {
-		dev_warn_ratelimited(&priv->hdev->dev, "Timeout waiting for response to command %02x\n", command);
+		dev_warn_ratelimited(&priv->hdev->dev, "Timeout waiting for response to command %02x\n",
+				     command);
 		return -ETIMEDOUT;
 	} else if (ret < 0) {
 		return ret;
 	}
 
-
-	/* 
+	/*
 	 * CRC Verification
 	 * liquidctl checks CRC over bytes [1..63] (assuming 64 byte report).
 	 * If standard SMBus CRC-8 algorithm is used, checksumming (Data + CRC) should yield 0.
-	 * 
+	 *
 	 * NOTE: When userspace tools (like OpenRGB or liquidctl) are accessing the device
 	 * concurrently, we may intercept their response packets or see collisions.
 	 * In these cases, the CRC check will often fail (or the sequence number might mismatch).
@@ -224,7 +230,9 @@ static int hydro_platinum_transaction(struct hydro_platinum_data *priv, u8 featu
 	 * confuse the device state machine and cause firmware crashes/reboots.
 	 */
 	if (crc8(corsair_crc8_table, priv->rx_buffer + 1, REPORT_LENGTH - 1, 0) != 0) {
-		dev_warn_ratelimited(&priv->hdev->dev, "CRC check failed for command %02x - possible userspace collision\n", command);
+		dev_warn_ratelimited(&priv->hdev->dev,
+				     "CRC check failed for command %02x - possible userspace collision\n",
+				     command);
 		return -EIO;
 	}
 
@@ -243,13 +251,13 @@ static int hydro_platinum_write_cooling(struct hydro_platinum_data *priv)
 {
 	int ret;
 	u8 data[60];
-	
-	/* 
+
+	/*
 	 * Construct the 60-byte payload for the Command 0x14.
 	 * The payload is appended to the 4-byte header in hydro_platinum_send_command.
 	 */
-	
-	/* 
+
+	/*
 	 * Payload Prefix: 00 ff 05 ff ff ff ff ff
 	 */
 	memset(data, 0, sizeof(data));
@@ -257,9 +265,9 @@ static int hydro_platinum_write_cooling(struct hydro_platinum_data *priv)
 	data[1] = 0xff;
 	data[2] = 0x05;
 	memset(data + 3, 0xff, 5);
-	
+
 	data[OFFSET_PROFILE_LEN] = 7;
-	
+
 	/* Pump Mode */
 	data[OFFSET_PUMP_MODE] = priv->target_pump_mode;
 
@@ -279,37 +287,40 @@ static int hydro_platinum_write_cooling(struct hydro_platinum_data *priv)
 	}
 
 	/* Send Feature Cooling (Fan 1, 2, Pump) */
-	ret = hydro_platinum_transaction(priv, FEATURE_COOLING, CMD_SET_COOLING, data, sizeof(data));
+	ret = hydro_platinum_transaction(priv, FEATURE_COOLING, CMD_SET_COOLING, data,
+					 sizeof(data));
 	if (ret)
 		return ret;
 
-	/* 
+	/*
 	 * Command Ordering Note:
-	 * The device requires the "Main" cooling command (Feature 0x00) to be sent 
+	 * The device requires the "Main" cooling command (Feature 0x00) to be sent
 	 * BEFORE the "Secondary" cooling command (Feature 0x03, for Fan 3).
 	 * reversing this order may cause the device to stall or return -EPIPE.
 	 */
-	
+
 	/* Fan 3 (Index 2) - Requires Feature Cooling 2 */
 	if (priv->fan_count >= 3) {
 		u8 data2[60];
+
 		memcpy(data2, data, sizeof(data));
-		
+
 		/* Ensure Pump Mode is set correctly even in secondary command */
 		data2[OFFSET_PUMP_MODE] = priv->target_pump_mode;
-		
+
 		/* Reset Fan 1/2 slots */
 		data2[OFFSET_FAN1_MODE] = 0;
 		data2[OFFSET_FAN1_DUTY] = 0;
 		data2[OFFSET_FAN2_MODE] = 0;
 		data2[OFFSET_FAN2_DUTY] = 0;
-		
+
 		/* Fan 3 goes into Fan 1 slot */
 		data2[OFFSET_FAN1_MODE] = priv->target_fan_mode[2];
 		if (priv->target_fan_mode[2] == FAN_MODE_FIXED_DUTY)
 			data2[OFFSET_FAN1_DUTY] = priv->target_fan_duty[2];
-			
-		ret = hydro_platinum_transaction(priv, FEATURE_COOLING_FAN3, CMD_SET_COOLING, data2, sizeof(data2));
+
+		ret = hydro_platinum_transaction(priv, FEATURE_COOLING_FAN3, CMD_SET_COOLING,
+						 data2, sizeof(data2));
 		if (ret)
 			return ret;
 	}
@@ -317,7 +328,8 @@ static int hydro_platinum_write_cooling(struct hydro_platinum_data *priv)
 	return 0;
 }
 
-static int hydro_platinum_raw_event(struct hid_device *hdev, struct hid_report *report, u8 *data, int size)
+static int hydro_platinum_raw_event(struct hid_device *hdev, struct hid_report *report, u8 *data,
+				    int size)
 {
 	struct hydro_platinum_data *priv = hid_get_drvdata(hdev);
 
@@ -325,21 +337,22 @@ static int hydro_platinum_raw_event(struct hid_device *hdev, struct hid_report *
 	if (report->type != HID_INPUT_REPORT)
 		return 0;
 
-	/* 
+	/*
 	 * The driver buffer expects [0]=ReportID, [1]=Prefix.
 	 * We treat the raw data as the payload.
 	 */
-	
+
 	/* Safety check size */
-	if (size > REPORT_LENGTH + 16) size = REPORT_LENGTH + 16;
-	
-	/* 
+	if (size > REPORT_LENGTH + 16)
+		size = REPORT_LENGTH + 16;
+
+	/*
 	 * Copy to RX buffer.
-	 * We accept any input report here to unblock the waiter, and let the 
+	 * We accept any input report here to unblock the waiter, and let the
 	 * transaction logic (CRC check) validate if it's the correct response.
 	 */
 	memcpy(priv->rx_buffer, data, size);
-	
+
 	complete(&priv->wait_for_report);
 	return 0;
 }
@@ -354,53 +367,54 @@ static int hydro_platinum_raw_event(struct hid_device *hdev, struct hid_report *
 static int hydro_platinum_update(struct hydro_platinum_data *priv)
 {
 	int ret;
-	
+
 	mutex_lock(&priv->lock);
 
-	if (time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY)) || !priv->valid) {
-		
+	if (time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY)) ||
+	    !priv->valid) {
 		reinit_completion(&priv->wait_for_report);
 
 		ret = hydro_platinum_transaction(priv, FEATURE_COOLING, CMD_GET_STATUS, NULL, 0);
 		if (ret < 0)
 			goto out;
-		
+
 		/* Data is now in priv->rx_buffer (populated by raw_event) */
-		
+
 		/* Firmware Version: res[2] (Major << 4 | Minor), res[3] (Patch) */
 		if (!priv->valid) {
 			priv->fw_version[0] = priv->rx_buffer[2] >> 4;
 			priv->fw_version[1] = priv->rx_buffer[2] & 0x0f;
 			priv->fw_version[2] = priv->rx_buffer[3];
 		}
-		
+
 		/* Temp */
-		priv->liquid_temp = ((int)priv->rx_buffer[8] * 1000) + ((int)priv->rx_buffer[7] * 1000 / 255);
-		
-		/* 
+		priv->liquid_temp = ((int)priv->rx_buffer[8] * 1000) +
+				    ((int)priv->rx_buffer[7] * 1000 / 255);
+
+		/*
 		 * Parse Sensor Data:
 		 * - Fan 1 Speed: Offset 14, Duty: Offset 15
 		 * - Fan 2 Speed: Offset 21, Duty: Offset 22
 		 * - Fan 3 Speed: Offset 42, Duty: Offset 43
 		 * - Pump Speed:  Offset 28, Duty: Offset 29
 		 */
-		
+
 		/* Pump (Base 28) */
 		priv->pump_speed = get_unaligned_le16(priv->rx_buffer + 28 + 1);
 		priv->pump_duty = priv->rx_buffer[28];
-		
+
 		/* Fan 1 (Base 14) */
 		if (priv->fan_count >= 1) {
 			priv->fan_speeds[0] = get_unaligned_le16(priv->rx_buffer + 14 + 1);
 			priv->fan_duty[0] = priv->rx_buffer[14];
 		}
-			
+
 		/* Fan 2 (Base 21) */
 		if (priv->fan_count >= 2) {
 			priv->fan_speeds[1] = get_unaligned_le16(priv->rx_buffer + 21 + 1);
 			priv->fan_duty[1] = priv->rx_buffer[21];
 		}
-			
+
 		/* Fan 3 (Base 42) */
 		if (priv->fan_count >= 3) {
 			priv->fan_speeds[2] = get_unaligned_le16(priv->rx_buffer + 42 + 1);
@@ -417,10 +431,11 @@ out:
 	return ret;
 }
 
-static umode_t hydro_platinum_is_visible(const void *data, enum hwmon_sensor_types type, u32 attr, int channel)
+static umode_t hydro_platinum_is_visible(const void *data, enum hwmon_sensor_types type, u32 attr,
+					 int channel)
 {
 	const struct hydro_platinum_data *priv = data;
-	
+
 	switch (type) {
 	case hwmon_temp:
 		return 0444;
@@ -428,19 +443,24 @@ static umode_t hydro_platinum_is_visible(const void *data, enum hwmon_sensor_typ
 	case hwmon_pwm:
 		/* Channel 0: Pump */
 		/* Channel 1..N: Fans */
-		if (channel == 0) return 0644; /* Pump (Mode control via PWM) */
-		if (channel <= priv->fan_count) return 0644; /* Fans */
+		if (channel == 0)
+			return 0644; /* Pump (Mode control via PWM) */
+		if (channel <= priv->fan_count)
+			return 0644; /* Fans */
 		return 0;
 	default:
 		return 0;
 	}
 }
 
-static int hydro_platinum_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel, long *val)
+static int hydro_platinum_read(struct device *dev, enum hwmon_sensor_types type, u32 attr,
+			       int channel, long *val)
 {
 	struct hydro_platinum_data *priv = dev_get_drvdata(dev);
 	int ret = hydro_platinum_update(priv);
-	if (ret < 0) return ret;
+
+	if (ret < 0)
+		return ret;
 
 	switch (type) {
 	case hwmon_fan:
@@ -464,7 +484,8 @@ static int hydro_platinum_read(struct device *dev, enum hwmon_sensor_types type,
 	return 0;
 }
 
-static int hydro_platinum_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel, long val)
+static int hydro_platinum_write(struct device *dev, enum hwmon_sensor_types type, u32 attr,
+				int channel, long val)
 {
 	struct hydro_platinum_data *priv = dev_get_drvdata(dev);
 	int ret = 0;
@@ -475,7 +496,7 @@ static int hydro_platinum_write(struct device *dev, enum hwmon_sensor_types type
 	switch (type) {
 	case hwmon_pwm:
 		if (channel == 0) {
-			/* 
+			/*
 			 * Pump Control:
 			 * Map 0-255 PWM to discrete modes:
 			 * 0-84: Quiet		(Mode 0)
@@ -483,14 +504,18 @@ static int hydro_platinum_write(struct device *dev, enum hwmon_sensor_types type
 			 * 170-255: Extreme	(Mode 2)
 			 */
 			u8 mode;
+
 			val = clamp_val(val, 0, 255);
-			
-			if (val < 85) mode = PUMP_MODE_QUIET;
-			else if (val < 170) mode = PUMP_MODE_BALANCED;
-			else mode = PUMP_MODE_EXTREME;
-			
+
+			if (val < 85)
+				mode = PUMP_MODE_QUIET;
+			else if (val < 170)
+				mode = PUMP_MODE_BALANCED;
+			else
+				mode = PUMP_MODE_EXTREME;
+
 			priv->target_pump_mode = mode;
-			
+
 		} else {
 			/* Fan Control */
 			/* Index is channel - 1 */
@@ -499,19 +524,20 @@ static int hydro_platinum_write(struct device *dev, enum hwmon_sensor_types type
 				ret = -EINVAL;
 				goto out;
 			}
-			
+
 			val = clamp_val(val, 0, 255);
 			priv->target_fan_duty[i] = (u8)val;
 			priv->target_fan_mode[i] = FAN_MODE_FIXED_DUTY;
 		}
-		
+
 		ret = hydro_platinum_write_cooling(priv);
-		if (ret) {
 			if (channel == 0)
-				dev_warn_ratelimited(&priv->hdev->dev, "Failed to set Pump speed: %d\n", ret);
+				dev_warn_ratelimited(&priv->hdev->dev,
+						     "Failed to set Pump speed: %d\n", ret);
 			else
-				dev_warn_ratelimited(&priv->hdev->dev, "Failed to set Fan %d speed: %d\n", channel, ret);
-		}
+				dev_warn_ratelimited(&priv->hdev->dev,
+						     "Failed to set Fan %d speed: %d\n",
+						     channel, ret);
 		break;
 	default:
 		ret = -EOPNOTSUPP;
@@ -523,8 +549,6 @@ out:
 	return ret;
 }
 
-
-
 static const char *const hydro_platinum_fan_labels[] = {
 	"Pump",
 	"Fan 1",
@@ -532,7 +556,8 @@ static const char *const hydro_platinum_fan_labels[] = {
 	"Fan 3"
 };
 
-static int hydro_platinum_read_string_impl(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel, const char **str)
+static int hydro_platinum_read_string_impl(struct device *dev, enum hwmon_sensor_types type,
+					   u32 attr, int channel, const char **str)
 {
 	switch (type) {
 	case hwmon_fan:
@@ -557,17 +582,17 @@ static int hydro_platinum_read_string_impl(struct device *dev, enum hwmon_sensor
 
 static const struct hwmon_channel_info *hydro_platinum_info[] = {
 	HWMON_CHANNEL_INFO(fan,
-			HWMON_F_INPUT | HWMON_F_LABEL, /* Pump */
-			HWMON_F_INPUT | HWMON_F_LABEL, /* Fan 1 */
-			HWMON_F_INPUT | HWMON_F_LABEL, /* Fan 2 */
-			HWMON_F_INPUT | HWMON_F_LABEL), /* Fan 3 */
+			   HWMON_F_INPUT | HWMON_F_LABEL, /* Pump */
+			   HWMON_F_INPUT | HWMON_F_LABEL, /* Fan 1 */
+			   HWMON_F_INPUT | HWMON_F_LABEL, /* Fan 2 */
+			   HWMON_F_INPUT | HWMON_F_LABEL), /* Fan 3 */
 	HWMON_CHANNEL_INFO(pwm,
-			HWMON_PWM_INPUT, /* Pump */
-			HWMON_PWM_INPUT, /* Fan 1 */
-			HWMON_PWM_INPUT, /* Fan 2 */
-			HWMON_PWM_INPUT), /* Fan 3 */
+			   HWMON_PWM_INPUT, /* Pump */
+			   HWMON_PWM_INPUT, /* Fan 1 */
+			   HWMON_PWM_INPUT, /* Fan 2 */
+			   HWMON_PWM_INPUT), /* Fan 3 */
 	HWMON_CHANNEL_INFO(temp,
-			HWMON_T_INPUT | HWMON_T_LABEL),
+			   HWMON_T_INPUT | HWMON_T_LABEL),
 	NULL
 };
 
@@ -578,12 +603,13 @@ static const struct hwmon_ops hydro_platinum_hwmon_ops = {
 	.read_string = hydro_platinum_read_string_impl,
 };
 
-static ssize_t hydro_platinum_label_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t label_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct hydro_platinum_data *priv = dev_get_drvdata(dev);
+
 	return sysfs_emit(buf, "%s\n", priv->model_name);
 }
-static DEVICE_ATTR(label, 0444, hydro_platinum_label_show, NULL);
+static DEVICE_ATTR_RO(label);
 
 static struct attribute *hydro_platinum_attrs[] = {
 	&dev_attr_label.attr,
@@ -619,7 +645,7 @@ static int hydro_platinum_probe(struct hid_device *hdev, const struct hid_device
 	priv->tx_buffer = devm_kzalloc(&hdev->dev, REPORT_LENGTH + 16, GFP_KERNEL);
 	if (!priv->tx_buffer)
 		return -ENOMEM;
-		
+
 	priv->rx_buffer = devm_kzalloc(&hdev->dev, REPORT_LENGTH + 16, GFP_KERNEL);
 	if (!priv->rx_buffer)
 		return -ENOMEM;
@@ -627,20 +653,20 @@ static int hydro_platinum_probe(struct hid_device *hdev, const struct hid_device
 	mutex_init(&priv->lock);
 	init_completion(&priv->wait_for_report);
 	hid_set_drvdata(hdev, priv);
-	
-	/* 
+
+	/*
 	 * Retrieve device specific info from the ID table directly.
 	 * This avoids a large switch statement and redundant data.
 	 */
-	const struct hydro_platinum_device_info *info = 
+	const struct hydro_platinum_device_info *info =
 		(const struct hydro_platinum_device_info *)id->driver_data;
-	
+
 	if (!info)
 		return -ENODEV;
 
 	priv->fan_count = info->fan_count;
 	priv->model_name = info->model_name;
-	
+
 	ret = hid_parse(hdev);
 	if (ret)
 		return ret;
@@ -659,7 +685,7 @@ static int hydro_platinum_probe(struct hid_device *hdev, const struct hid_device
 	/* Initialize CRC table */
 	hydro_platinum_init_crc();
 
-	/* 
+	/*
 	 * Initialize Device
 	 * Default: Pump Balanced, Fans 50%
 	 */
@@ -671,19 +697,18 @@ static int hydro_platinum_probe(struct hid_device *hdev, const struct hid_device
 
 	hid_info(hdev, "Initializing device (Set Cooling: Pump Balanced, Fans 50%%)...\n");
 	ret = hydro_platinum_write_cooling(priv);
-	if (ret) {
+	if (ret)
 		hid_warn(hdev, "initialization command failed: %d\n", ret);
-	}
-	
+
 	/* Wait for response to init command. hydro_platinum_write_cooling handles the delay. */
-	
+
 	/* Initial update to get firmware version */
 	hid_info(hdev, "Requesting initial status update...\n");
 	ret = hydro_platinum_update(priv);
 	if (ret)
 		hid_warn(hdev, "initial update failed: %d\n", ret);
 	else
-		hid_info(hdev, "Firmware version: %d.%d.%d\n", 
+		hid_info(hdev, "Firmware version: %d.%d.%d\n",
 			 priv->fw_version[0], priv->fw_version[1], priv->fw_version[2]);
 
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, info->hwmon_name,
@@ -735,29 +760,41 @@ HYDRO_PLATINUM_INFO(3, corsair_h150i_elite_w, "Corsair iCUE H150i Elite RGB (Whi
 
 static const struct hid_device_id hydro_platinum_table[] = {
 	/* H100i Platinum */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c18), .driver_data = (kernel_ulong_t)&info_corsair_h100i_plat },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c18),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h100i_plat },
 	/* H100i Platinum SE */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c19), .driver_data = (kernel_ulong_t)&info_corsair_h100i_plat_se },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c19),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h100i_plat_se },
 	/* H115i Platinum */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c17), .driver_data = (kernel_ulong_t)&info_corsair_h115i_plat },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c17),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h115i_plat },
 	/* H60i Pro XT */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c29), .driver_data = (kernel_ulong_t)&info_corsair_h60i_xt },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c29),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h60i_xt },
 	/* H100i Pro XT */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c20), .driver_data = (kernel_ulong_t)&info_corsair_h100i_xt },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c20),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h100i_xt },
 	/* H115i Pro XT */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c21), .driver_data = (kernel_ulong_t)&info_corsair_h115i_xt },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c21),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h115i_xt },
 	/* H150i Pro XT */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c22), .driver_data = (kernel_ulong_t)&info_corsair_h150i_xt },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c22),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h150i_xt },
 	/* iCUE H100i Elite RGB */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c35), .driver_data = (kernel_ulong_t)&info_corsair_h100i_elite },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c35),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h100i_elite },
 	/* iCUE H115i Elite RGB */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c36), .driver_data = (kernel_ulong_t)&info_corsair_h115i_elite },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c36),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h115i_elite },
 	/* iCUE H150i Elite RGB */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c37), .driver_data = (kernel_ulong_t)&info_corsair_h150i_elite },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c37),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h150i_elite },
 	/* iCUE H100i Elite RGB (White) */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c40), .driver_data = (kernel_ulong_t)&info_corsair_h100i_elite_w },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c40),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h100i_elite_w },
 	/* iCUE H150i Elite RGB (White) */
-	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c41), .driver_data = (kernel_ulong_t)&info_corsair_h150i_elite_w },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CORSAIR, 0x0c41),
+	  .driver_data = (kernel_ulong_t)&info_corsair_h150i_elite_w },
 	{ }
 };
 MODULE_DEVICE_TABLE(hid, hydro_platinum_table);
