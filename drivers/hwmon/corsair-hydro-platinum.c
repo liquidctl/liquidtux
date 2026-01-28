@@ -88,7 +88,8 @@ struct hydro_platinum_data {
 	struct hid_device *hdev;
 	struct device *hwmon_dev;
 	struct mutex lock;
-	u8 *buffer;
+	u8 *tx_buffer;
+	u8 *rx_buffer;
 	u8 sequence;
 	
 	/* Sensor values */
@@ -147,29 +148,29 @@ static int hydro_platinum_send_command(struct hydro_platinum_data *priv, u8 feat
 	 * Some devices/firmware revisions require the alignment of 64-byte payload 
 	 * to be offset by the Report ID byte even in Control Transfers.
 	 */
-	memset(priv->buffer, 0, REPORT_LENGTH + 1);
+	memset(priv->tx_buffer, 0, REPORT_LENGTH + 1);
 	
-	priv->buffer[0] = 0x00; /* Report ID Padding */
-	priv->buffer[1] = CMD_WRITE_PREFIX;
+	priv->tx_buffer[0] = 0x00; /* Report ID Padding */
+	priv->tx_buffer[1] = CMD_WRITE_PREFIX;
 	
 	/* Sequence and feature/command logic */
 	priv->sequence = (priv->sequence % 31) + 1;
-	priv->buffer[2] = (priv->sequence << 3) | feature;
-	priv->buffer[3] = command;
+	priv->tx_buffer[2] = (priv->sequence << 3) | feature;
+	priv->tx_buffer[3] = command;
 	start_at = 4;
 	
 	if (data && data_len > 0) {
-		memcpy(priv->buffer + start_at, data, min(data_len, REPORT_LENGTH - start_at - 1));
+		memcpy(priv->tx_buffer + start_at, data, min(data_len, REPORT_LENGTH - start_at - 1));
 	}
 	
 	/* Calculate CRC over buf[2] to buf[REPORT_LENGTH-1+1] */
 	/* Payload is buf[1]..buf[64]. CRC is usually last byte of payload. */
-	priv->buffer[REPORT_LENGTH] = crc8(corsair_crc8_table, priv->buffer + 2, REPORT_LENGTH - 2, 0);
+	priv->tx_buffer[REPORT_LENGTH] = crc8(corsair_crc8_table, priv->tx_buffer + 2, REPORT_LENGTH - 2, 0);
 
 	/* Send Report - 65 bytes */
 	
 	/* Use HID_REQ_SET_REPORT (Control Transfer) */
-	ret = hid_hw_raw_request(priv->hdev, 0 /* Report ID */, priv->buffer, REPORT_LENGTH + 1,
+	ret = hid_hw_raw_request(priv->hdev, 0 /* Report ID */, priv->tx_buffer, REPORT_LENGTH + 1,
 				 HID_OUTPUT_REPORT, HID_REQ_SET_REPORT);
 	
 	/* raw_request returns number of bytes written on success */
@@ -192,25 +193,41 @@ static int hydro_platinum_send_command(struct hydro_platinum_data *priv, u8 feat
 static int hydro_platinum_transaction(struct hydro_platinum_data *priv, u8 feature, u8 command, u8 *data, int data_len)
 {
 	int ret;
+	u8 sent_seq;
 
 	reinit_completion(&priv->wait_for_report);
 
 	ret = hydro_platinum_send_command(priv, feature, command, data, data_len);
-	if (ret < 0)
+	if (ret < 0) {
+		hid_err_ratelimited(priv->hdev, "Failed to send command %02x: %d\n", command, ret);
 		return ret;
+	}
+
+	sent_seq = priv->sequence;
 
 	ret = wait_for_completion_interruptible_timeout(&priv->wait_for_report, msecs_to_jiffies(500));
-	if (ret == 0)
+	if (ret == 0) {
+		hid_warn_ratelimited(priv->hdev, "Timeout waiting for response to command %02x\n", command);
 		return -ETIMEDOUT;
-	else if (ret < 0)
+	} else if (ret < 0) {
 		return ret;
+	}
+
 
 	/* 
 	 * CRC Verification
 	 * liquidctl checks CRC over bytes [1..63] (assuming 64 byte report).
 	 * If standard SMBus CRC-8 algorithm is used, checksumming (Data + CRC) should yield 0.
+	 * 
+	 * NOTE: When userspace tools (like OpenRGB or liquidctl) are accessing the device
+	 * concurrently, we may intercept their response packets or see collisions.
+	 * In these cases, the CRC check will often fail (or the sequence number might mismatch).
+	 * This is expected behavior in a multi-client scenario and catching it here
+	 * prevents the driver from processing invalid data, which could otherwise
+	 * confuse the device state machine and cause firmware crashes/reboots.
 	 */
-	if (crc8(corsair_crc8_table, priv->buffer + 1, REPORT_LENGTH - 1, 0) != 0) {
+	if (crc8(corsair_crc8_table, priv->rx_buffer + 1, REPORT_LENGTH - 1, 0) != 0) {
+		hid_warn_ratelimited(priv->hdev, "CRC check failed for command %02x - possible userspace collision\n", command);
 		return -EIO;
 	}
 
@@ -319,7 +336,12 @@ static int hydro_platinum_raw_event(struct hid_device *hdev, struct hid_report *
 	/* Safety check size */
 	if (size > REPORT_LENGTH + 16) size = REPORT_LENGTH + 16;
 	
-	memcpy(priv->buffer, data, size);
+	/* 
+	 * Copy to RX buffer.
+	 * We accept any input report here to unblock the waiter, and let the 
+	 * transaction logic (CRC check) validate if it's the correct response.
+	 */
+	memcpy(priv->rx_buffer, data, size);
 	
 	complete(&priv->wait_for_report);
 	return 0;
@@ -346,17 +368,17 @@ static int hydro_platinum_update(struct hydro_platinum_data *priv)
 		if (ret < 0)
 			goto out;
 		
-		/* Data is now in priv->buffer (populated by raw_event) */
+		/* Data is now in priv->rx_buffer (populated by raw_event) */
 		
 		/* Firmware Version: res[2] (Major << 4 | Minor), res[3] (Patch) */
 		if (!priv->valid) {
-			priv->fw_version[0] = priv->buffer[2] >> 4;
-			priv->fw_version[1] = priv->buffer[2] & 0x0f;
-			priv->fw_version[2] = priv->buffer[3];
+			priv->fw_version[0] = priv->rx_buffer[2] >> 4;
+			priv->fw_version[1] = priv->rx_buffer[2] & 0x0f;
+			priv->fw_version[2] = priv->rx_buffer[3];
 		}
 		
 		/* Temp */
-		priv->liquid_temp = ((int)priv->buffer[8] * 1000) + ((int)priv->buffer[7] * 1000 / 255);
+		priv->liquid_temp = ((int)priv->rx_buffer[8] * 1000) + ((int)priv->rx_buffer[7] * 1000 / 255);
 		
 		/* 
 		 * Parse Sensor Data:
@@ -367,25 +389,25 @@ static int hydro_platinum_update(struct hydro_platinum_data *priv)
 		 */
 		
 		/* Pump (Base 28) */
-		priv->pump_speed = get_unaligned_le16(priv->buffer + 28 + 1);
-		priv->pump_duty = priv->buffer[28];
+		priv->pump_speed = get_unaligned_le16(priv->rx_buffer + 28 + 1);
+		priv->pump_duty = priv->rx_buffer[28];
 		
 		/* Fan 1 (Base 14) */
 		if (priv->fan_count >= 1) {
-			priv->fan_speeds[0] = get_unaligned_le16(priv->buffer + 14 + 1);
-			priv->fan_duty[0] = priv->buffer[14];
+			priv->fan_speeds[0] = get_unaligned_le16(priv->rx_buffer + 14 + 1);
+			priv->fan_duty[0] = priv->rx_buffer[14];
 		}
 			
 		/* Fan 2 (Base 21) */
 		if (priv->fan_count >= 2) {
-			priv->fan_speeds[1] = get_unaligned_le16(priv->buffer + 21 + 1);
-			priv->fan_duty[1] = priv->buffer[21];
+			priv->fan_speeds[1] = get_unaligned_le16(priv->rx_buffer + 21 + 1);
+			priv->fan_duty[1] = priv->rx_buffer[21];
 		}
 			
 		/* Fan 3 (Base 42) */
 		if (priv->fan_count >= 3) {
-			priv->fan_speeds[2] = get_unaligned_le16(priv->buffer + 42 + 1);
-			priv->fan_duty[2] = priv->buffer[42];
+			priv->fan_speeds[2] = get_unaligned_le16(priv->rx_buffer + 42 + 1);
+			priv->fan_duty[2] = priv->rx_buffer[42];
 		}
 
 		priv->updated = jiffies;
@@ -590,9 +612,13 @@ static int hydro_platinum_probe(struct hid_device *hdev, const struct hid_device
 		return -ENOMEM;
 
 	priv->hdev = hdev;
-	/* Buffer needs to be large enough + safety */
-	priv->buffer = devm_kzalloc(&hdev->dev, REPORT_LENGTH + 16, GFP_KERNEL);
-	if (!priv->buffer)
+	/* Buffers need to be large enough + safety */
+	priv->tx_buffer = devm_kzalloc(&hdev->dev, REPORT_LENGTH + 16, GFP_KERNEL);
+	if (!priv->tx_buffer)
+		return -ENOMEM;
+		
+	priv->rx_buffer = devm_kzalloc(&hdev->dev, REPORT_LENGTH + 16, GFP_KERNEL);
+	if (!priv->rx_buffer)
 		return -ENOMEM;
 
 	mutex_init(&priv->lock);
