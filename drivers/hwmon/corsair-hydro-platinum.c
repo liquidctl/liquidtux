@@ -314,7 +314,7 @@ static int hydro_platinum_write_cooling(struct hydro_platinum_data *priv)
 			
 		ret = hydro_platinum_transaction(priv, FEATURE_COOLING_FAN3, CMD_SET_COOLING, data2, sizeof(data2));
 		if (ret)
-			hid_warn(priv->hdev, "Failed to set Fan 3 speed: %d\n", ret);
+			return ret;
 	}
 
 	return 0;
@@ -509,6 +509,12 @@ static int hydro_platinum_write(struct device *dev, enum hwmon_sensor_types type
 		}
 		
 		ret = hydro_platinum_write_cooling(priv);
+		if (ret) {
+			if (channel == 0)
+				hid_warn_ratelimited(priv->hdev, "Failed to set Pump speed: %d\n", ret);
+			else
+				hid_warn_ratelimited(priv->hdev, "Failed to set Fan %d speed: %d\n", channel, ret);
+		}
 		break;
 	default:
 		ret = -EOPNOTSUPP;
