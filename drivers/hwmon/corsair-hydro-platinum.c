@@ -31,6 +31,7 @@
  */
 
 #include <linux/completion.h>
+#include <linux/debugfs.h>
 #include <linux/hid.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
@@ -115,6 +116,7 @@ struct hydro_platinum_data {
 
 	unsigned long updated;
 	bool valid;
+	struct dentry *debugfs;
 };
 
 /* Device Info Structs */
@@ -558,6 +560,7 @@ static int hydro_platinum_write(struct device *dev, enum hwmon_sensor_types type
 		}
 
 		ret = hydro_platinum_write_cooling(priv);
+		if (ret) {
 			if (channel == 0)
 				dev_warn_ratelimited(&priv->hdev->dev,
 						     "Failed to set Pump speed: %d\n", ret);
@@ -565,6 +568,7 @@ static int hydro_platinum_write(struct device *dev, enum hwmon_sensor_types type
 				dev_warn_ratelimited(&priv->hdev->dev,
 						     "Failed to set Fan %d speed: %d\n",
 						     channel, ret);
+		}
 		break;
 	default:
 		ret = -EOPNOTSUPP;
@@ -646,6 +650,29 @@ static struct attribute *hydro_platinum_attrs[] = {
 static const struct attribute_group hydro_platinum_group = {
 	.attrs = hydro_platinum_attrs,
 };
+
+static int firmware_version_show(struct seq_file *seq, void *offset)
+{
+	struct hydro_platinum_data *priv = seq->private;
+
+	seq_printf(seq, "%d.%d.%d\n",
+		   priv->fw_version[0], priv->fw_version[1], priv->fw_version[2]);
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(firmware_version);
+
+static void hydro_platinum_debugfs_init(struct hydro_platinum_data *priv)
+{
+	char name[64];
+
+	snprintf(name, sizeof(name), "corsair_hydro_platinum-%s",
+		 dev_name(&priv->hdev->dev));
+
+	priv->debugfs = debugfs_create_dir(name, NULL);
+	debugfs_create_file("firmware_version", 0444, priv->debugfs, priv,
+			    &firmware_version_fops);
+}
 
 static const struct attribute_group *hydro_platinum_groups[] = {
 	&hydro_platinum_group,
@@ -746,6 +773,8 @@ static int hydro_platinum_probe(struct hid_device *hdev, const struct hid_device
 		goto fail_and_close;
 	}
 
+	hydro_platinum_debugfs_init(priv);
+
 	return 0;
 
 fail_and_close:
@@ -759,6 +788,7 @@ static void hydro_platinum_remove(struct hid_device *hdev)
 {
 	struct hydro_platinum_data *priv = hid_get_drvdata(hdev);
 
+	debugfs_remove_recursive(priv->debugfs);
 	hwmon_device_unregister(priv->hwmon_dev);
 	hid_hw_close(hdev);
 	hid_hw_stop(hdev);
