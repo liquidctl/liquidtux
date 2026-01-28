@@ -193,21 +193,18 @@ static int hydro_platinum_send_command(struct hydro_platinum_data *priv, u8 feat
 static int hydro_platinum_transaction(struct hydro_platinum_data *priv, u8 feature, u8 command, u8 *data, int data_len)
 {
 	int ret;
-	u8 sent_seq;
 
 	reinit_completion(&priv->wait_for_report);
 
 	ret = hydro_platinum_send_command(priv, feature, command, data, data_len);
 	if (ret < 0) {
-		hid_err_ratelimited(priv->hdev, "Failed to send command %02x: %d\n", command, ret);
+		dev_err_ratelimited(&priv->hdev->dev, "Failed to send command %02x: %d\n", command, ret);
 		return ret;
 	}
 
-	sent_seq = priv->sequence;
-
 	ret = wait_for_completion_interruptible_timeout(&priv->wait_for_report, msecs_to_jiffies(500));
 	if (ret == 0) {
-		hid_warn_ratelimited(priv->hdev, "Timeout waiting for response to command %02x\n", command);
+		dev_warn_ratelimited(&priv->hdev->dev, "Timeout waiting for response to command %02x\n", command);
 		return -ETIMEDOUT;
 	} else if (ret < 0) {
 		return ret;
@@ -227,7 +224,7 @@ static int hydro_platinum_transaction(struct hydro_platinum_data *priv, u8 featu
 	 * confuse the device state machine and cause firmware crashes/reboots.
 	 */
 	if (crc8(corsair_crc8_table, priv->rx_buffer + 1, REPORT_LENGTH - 1, 0) != 0) {
-		hid_warn_ratelimited(priv->hdev, "CRC check failed for command %02x - possible userspace collision\n", command);
+		dev_warn_ratelimited(&priv->hdev->dev, "CRC check failed for command %02x - possible userspace collision\n", command);
 		return -EIO;
 	}
 
@@ -511,9 +508,9 @@ static int hydro_platinum_write(struct device *dev, enum hwmon_sensor_types type
 		ret = hydro_platinum_write_cooling(priv);
 		if (ret) {
 			if (channel == 0)
-				hid_warn_ratelimited(priv->hdev, "Failed to set Pump speed: %d\n", ret);
+				dev_warn_ratelimited(&priv->hdev->dev, "Failed to set Pump speed: %d\n", ret);
 			else
-				hid_warn_ratelimited(priv->hdev, "Failed to set Fan %d speed: %d\n", channel, ret);
+				dev_warn_ratelimited(&priv->hdev->dev, "Failed to set Fan %d speed: %d\n", channel, ret);
 		}
 		break;
 	default:
