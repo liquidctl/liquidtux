@@ -30,7 +30,7 @@
  * Copyright 2026 Jack Greiner <jack@emoss.org>
  */
 
-#include <linux/debugfs.h>
+#include <linux/completion.h>
 #include <linux/hid.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
@@ -38,8 +38,6 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
-#include <linux/spinlock.h>
-#include <linux/wait.h>
 #include <linux/crc8.h>
 #include <generated/uapi/linux/version.h>
 
