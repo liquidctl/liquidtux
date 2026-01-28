@@ -82,7 +82,9 @@
 #define OFFSET_PUMP_MODE		20
 #define OFFSET_PROFILE_LEN		26
 
+#if IS_REACHABLE(CONFIG_CRC8)
 DECLARE_CRC8_TABLE(corsair_crc8_table);
+#endif
 
 struct hydro_platinum_data {
 	struct hid_device *hdev;
@@ -125,7 +127,32 @@ struct hydro_platinum_device_info {
 /* SMBus standard CRC-8 polynomial x^8 + x^2 + x + 1 (0x07) */
 static void hydro_platinum_init_crc(void)
 {
+#if IS_REACHABLE(CONFIG_CRC8)
 	crc8_populate_msb(corsair_crc8_table, 0x07);
+#endif
+}
+
+static u8 hydro_platinum_calc_crc(const u8 *data, size_t len, u8 crc)
+{
+#if IS_REACHABLE(CONFIG_CRC8)
+	return crc8(corsair_crc8_table, data, len, crc);
+#else
+	/* Table-less fallback for when CONFIG_CRC8 is disabled */
+	size_t i, j;
+	u8 val;
+
+	for (i = 0; i < len; i++) {
+		val = data[i];
+		crc ^= val;
+		for (j = 0; j < 8; j++) {
+			if (crc & 0x80)
+				crc = (crc << 1) ^ 0x07;
+			else
+				crc <<= 1;
+		}
+	}
+	return crc;
+#endif
 }
 
 /**
@@ -166,8 +193,8 @@ static int hydro_platinum_send_command(struct hydro_platinum_data *priv, u8 feat
 
 	/* Calculate CRC over buf[2] to buf[REPORT_LENGTH-1+1] */
 	/* Payload is buf[1]..buf[64]. CRC is usually last byte of payload. */
-	priv->tx_buffer[REPORT_LENGTH] = crc8(corsair_crc8_table, priv->tx_buffer + 2,
-					      REPORT_LENGTH - 2, 0);
+	priv->tx_buffer[REPORT_LENGTH] = hydro_platinum_calc_crc(priv->tx_buffer + 2,
+								 REPORT_LENGTH - 2, 0);
 
 	/* Send Report - 65 bytes */
 
@@ -229,7 +256,7 @@ static int hydro_platinum_transaction(struct hydro_platinum_data *priv, u8 featu
 	 * prevents the driver from processing invalid data, which could otherwise
 	 * confuse the device state machine and cause firmware crashes/reboots.
 	 */
-	if (crc8(corsair_crc8_table, priv->rx_buffer + 1, REPORT_LENGTH - 1, 0) != 0) {
+	if (hydro_platinum_calc_crc(priv->rx_buffer + 1, REPORT_LENGTH - 1, 0) != 0) {
 		dev_warn_ratelimited(&priv->hdev->dev,
 				     "CRC check failed for command %02x - possible userspace collision\n",
 				     command);
