@@ -13,4 +13,7 @@ DEST_MODULE_LOCATION[2]="/kernel/drivers/hwmon"
 BUILT_MODULE_NAME[3]="nzxt-smart2"
 DEST_MODULE_LOCATION[3]="/kernel/drivers/hwmon"
 
+BUILT_MODULE_NAME[4]="razer_hanbo"
+DEST_MODULE_LOCATION[4]="/kernel/drivers/hwmon"
+
 AUTOINSTALL="yes"
