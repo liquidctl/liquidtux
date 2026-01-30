@@ -25,6 +25,7 @@ This is the current state of the drivers in regards to this process:
 | NZXT Kraken X42/X52/X62/X72 | `nzxt-kraken2` | `kraken2` | in Linux 5.13 ([patch][p-kraken2-v2]) |
 | NZXT Kraken X53/X63/X73, Z53/Z63/Z73, Kraken 2023 (standard, Elite) | `nzxt-kraken3` | `kraken3` | in Linux 6.9 ([patch][p-kraken3]), Kraken 2023 - in Linux 6.10 ([patch][p-kraken2023]) |
 | NZXT Smart Device V2/RGB & Fan Controller | `nzxt-smart2` | `nzxtsmart2` | in Linux 5.17 ([patch][p-smart2]) |
+| Corsair Hydro H100i/H115i Platinum/SE, H60i/H100i/H115i/H150i Pro XT, iCUE H100i/H115i/H150i Elite RGB | `corsair-hydro-platinum` | `corsair_hydro_platinum` | |
 
 This repository contains the latest state of each driver, including features
 and bug fixes that are not yet submitted upstream.
@@ -43,6 +44,7 @@ $ sudo modprobe nzxt-grid3              # NZXT Grid+ V3/Smart Device (V1)
 $ sudo modprobe nzxt-kraken2            # NZXT Kraken X42/X52/X62/X72
 $ sudo modprobe nzxt-kraken3            # NZXT Kraken X53/X63/X73, Z53/Z63/Z73, Kraken 2023 (standard, Elite)
 $ sudo modprobe nzxt-smart2             # NZXT Smart Device V2/RGB & Fan Controller
+$ sudo modprobe corsair-hydro-platinum  # Corsair Hydro H100i/H115i Platinum/SE, Pro XT, Elite RGB
 ```
 
 Those on other distros can install DKMS files using `dkms_install` `Makefile`
@@ -74,6 +76,7 @@ $ sudo insmod drivers/hwmon/nzxt-grid3.ko         # NZXT Grid+ V3/Smart Device (
 $ sudo insmod drivers/hwmon/nzxt-kraken2.ko       # NZXT Kraken X42/X52/X62/X72
 $ sudo insmod drivers/hwmon/nzxt-kraken3.ko       # NZXT Kraken X53/X63/X73, Z53/Z63/Z73, Kraken 2023 (standard, Elite)
 $ sudo insmod drivers/hwmon/nzxt-smart2.ko        # NZXT Smart Device V2/RGB & Fan Controller
+$ sudo insmod drivers/hwmon/corsair-hydro-platinum.ko # Corsair Hydro H100i/H115i Platinum/SE, Pro XT, Elite RGB
 ```
 
 To unload them, use `rmmod` or `modprobe -r`.

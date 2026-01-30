@@ -30,6 +30,7 @@ jobs:
           path: linux
           ref: ${{ matrix.kernel_version }}
       - run: cp src/.github/workflows/all.config linux/
+      - run: sed -i 's/tristate$/tristate "CRC8"/' linux/lib/crc/Kconfig linux/lib/Kconfig 2>/dev/null || true
       - run: scripts/config --file all.config ${{ matrix.kconfig_pm }} ${{ matrix.kconfig_debug_fs }}
         working-directory: linux
       - run: KCONFIG_ALLCONFIG=1 KCFLAGS=-Werror make C=1 allnoconfig
