@@ -13,6 +13,7 @@ Supported devices:
 * NZXT Kraken Z73
 * NZXT Kraken 2023
 * NZXT Kraken 2023 Elite
+* NZXT Kraken 2024 Elite
 
 Author: Jonas Malaco, Aleksa Savic
 
@@ -20,7 +21,8 @@ Description
 -----------
 
 This driver enables hardware monitoring support for NZXT Kraken X53/X63/X73,
-Z53/Z63/Z73 and Kraken 2023 (standard and Elite) all-in-one CPU liquid coolers.
+Z53/Z63/Z73, Kraken 2023 (standard and Elite) and Kraken 2024 Elite all-in-one
+CPU liquid coolers.
 All models expose liquid temperature and pump speed (in RPM), as well as PWM
 control (either as a fixed value or through a temp-PWM curve). The Z-series and
 Kraken 2023 models additionally expose the speed and duty of an optionally connected
