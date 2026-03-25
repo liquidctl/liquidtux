@@ -22,6 +22,19 @@ USB_IDS = [
   { :vendor => "0x1e71", :product => "0x2010" },
   { :vendor => "0x1e71", :product => "0x2011" },
   { :vendor => "0x1e71", :product => "0x2019" },
+  # corsair-hydro-platinum
+  { :vendor => "0x1b1c", :product => "0x0c18" }, # H100i Platinum
+  { :vendor => "0x1b1c", :product => "0x0c19" }, # H100i Platinum SE
+  { :vendor => "0x1b1c", :product => "0x0c17" }, # H115i Platinum
+  { :vendor => "0x1b1c", :product => "0x0c29" }, # H60i Pro XT
+  { :vendor => "0x1b1c", :product => "0x0c20" }, # H100i Pro XT
+  { :vendor => "0x1b1c", :product => "0x0c21" }, # H115i Pro XT
+  { :vendor => "0x1b1c", :product => "0x0c22" }, # H150i Pro XT
+  { :vendor => "0x1b1c", :product => "0x0c35" }, # H100i Elite RGB
+  { :vendor => "0x1b1c", :product => "0x0c36" }, # H115i Elite RGB
+  { :vendor => "0x1b1c", :product => "0x0c37" }, # H150i Elite RGB
+  { :vendor => "0x1b1c", :product => "0x0c40" }, # H100i Elite RGB (White)
+  { :vendor => "0x1b1c", :product => "0x0c41" }, # H150i Elite RGB (White)
 ]
 
 Vagrant.configure("2") do |config|
